@@ -169,7 +169,7 @@ pattern over character names (`FULL STOP`, `COMMA`, `QUESTION MARK`).
 
 About 57 MB/s and 21 million tokens per second with every built-in matcher,
 on an Apple M5 laptop, over 1.2 MB of English technical prose. The slowest
-input measured is a long run of one punctuation character, at about 10 MB/s.
+input measured is a long run of one short piece, such as `a.` or `1:`, at about 19 MB/s.
 
 ```bash
 cargo run --release --example throughput -- FILE
