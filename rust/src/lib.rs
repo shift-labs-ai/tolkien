@@ -50,5 +50,5 @@ pub use trie::Trie;
 
 /// Compiles and runs the Rust examples in the README as tests.
 #[cfg(doctest)]
-#[doc = include_str!("../README.md")]
+#[doc = include_str!("../../README.md")]
 struct ReadmeExamples;

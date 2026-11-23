@@ -20,7 +20,7 @@ Usage:
   python3 tools/evaluate.py --stray DATE       tokens of a kind outside every
                                                span that expects that kind
 
-Run tools/corpora.py first, and build with `cargo build --release`.
+Run tools/corpora.py first, and build with `cargo build --release` in rust/.
 Pure standard library.
 """
 
@@ -37,7 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LABELLED = ROOT / "corpus" / "labelled"
-BINARY = ROOT / "target" / "release" / "tolkien"
+BINARY = ROOT / "rust" / "target" / "release" / "tolkien"
 # Between documents. No matcher reads across a NUL character.
 SEPARATOR = "\n\0\n"
 
@@ -179,7 +179,7 @@ def main() -> None:
     parser.add_argument("--stray", metavar="KIND", help="print tokens of this kind outside its spans")
     args = parser.parse_args()
     if not BINARY.exists():
-        sys.exit("build first: cargo build --release")
+        sys.exit("build first: cargo build --release, in rust/")
     paths = sorted(LABELLED.glob("*.jsonl"))
     if args.corpora:
         paths = [path for path in paths if path.stem in args.corpora]

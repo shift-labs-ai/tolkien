@@ -104,11 +104,12 @@ that `tools/corpora.py` downloads into `corpus/`, which is not committed.
 
 ```bash
 python3 tools/corpora.py                                          # fetch and prepare
-cargo run --release --example fuzz -- corpus/docs/*.txt           # properties
-cargo build --release && python3 tools/evaluate.py                # labelled spans
+cd rust
+cargo run --release --example fuzz -- ../corpus/docs/*.txt        # properties
+cargo build --release && python3 ../tools/evaluate.py             # labelled spans
 ```
 
-- **`examples/fuzz.rs`** lexes every document, then mutates documents at
+- **`rust/examples/fuzz.rs`** lexes every document, then mutates documents at
   random, and checks properties that must hold for any text: the tokens
   cover it, they are the tokens of asking every matcher at every position,
   they are the same when the text is lexed in pieces on several threads,
@@ -268,7 +269,7 @@ What to know when writing a matcher by hand:
 - **`Trie`** finds the longest of many words at the cursor, and
   `tolkien::chars` has the character classes the built-in matchers use.
 
-[tests/custom.rs](tests/custom.rs) has four matchers written both ways,
+[rust/tests/custom.rs](rust/tests/custom.rs) has four matchers written both ways,
 by hand and as patterns, and checks that the two agree: a card number, an
 IP address, a MAC address and a list of keywords.
 
@@ -278,6 +279,7 @@ matcher is added, and each matcher is asked for every token it can start.
 ## Command line
 
 ```bash
+cd rust
 cargo run -- "Mail dana@acme.com by 2026-11-23"   # kind, start, end, text
 cargo run -- --skip-space < notes.txt
 ```
@@ -288,7 +290,7 @@ No character table is written by hand. `tools/gen_unicode.py` builds them
 from the Unicode Character Database (Unicode 18.0.0, files pinned by hash)
 and writes two files:
 
-- `src/unicode_tables.rs`, the tables the code uses.
+- `rust/src/unicode_tables.rs`, the tables the code uses.
 - `docs/charsets.md`, every member of every named set, to be reviewed.
 
 Each table is a rule: a general category (letters, digits, currency
@@ -314,7 +316,7 @@ runs of very short tokens the shortcuts do not cover, such as digits of
 other scripts, at about 110 MB/s on one thread.
 
 ```bash
-cargo run --release --example throughput -- FILE
+cd rust && cargo run --release --example throughput -- FILE
 ```
 
 Three things make it fast, and none of them changes a token:
@@ -327,7 +329,7 @@ Three things make it fast, and none of them changes a token:
   sixteen.
 - **The default lexer knows the commonest tokens.** A plain word, a
   number, a run of white space and a punctuation mark are most of a text,
-  and `src/shortcuts.rs` reads them straight from the bytes, eight at a
+  and `rust/src/shortcuts.rs` reads them straight from the bytes, eight at a
   time for a word. Where the bytes leave a chance to one matcher or two, as
   a month name does to a date, it asks those and no other. It restates what
   the matchers would answer together, so the tests and the fuzzer compare

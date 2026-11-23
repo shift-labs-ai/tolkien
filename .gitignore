@@ -1,4 +1,4 @@
-target/
+rust/target/
 tools/.ucd/
 __pycache__/
 corpus/

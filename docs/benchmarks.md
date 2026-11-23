@@ -5,8 +5,9 @@ what the fuzzer found. Measured on 23 November 2026; reproduce with:
 
 ```bash
 python3 tools/corpora.py
-cargo build --release && python3 tools/evaluate.py
-cargo run --release --example fuzz -- --seconds 60 corpus/docs/*.txt
+cd rust
+cargo build --release && python3 ../tools/evaluate.py
+cargo run --release --example fuzz -- --seconds 60 ../corpus/docs/*.txt
 ```
 
 ## Corpora

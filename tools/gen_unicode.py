@@ -3,8 +3,8 @@
 
 Writes two files:
 
-  src/unicode_tables.rs   the tables the matchers use
-  docs/charsets.md        every member of every named set, for review
+  rust/src/unicode_tables.rs   the tables the matchers use
+  docs/charsets.md             every member of every named set, for review
 
 The Rust file holds one lookup table for all classes: every code point maps
 to the set of classes it is in. The code points are cut into blocks of 256,
@@ -44,7 +44,7 @@ SHA256 = {
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tools" / ".ucd" / VERSION
-RUST_OUT = ROOT / "src" / "unicode_tables.rs"
+RUST_OUT = ROOT / "rust" / "src" / "unicode_tables.rs"
 REVIEW_OUT = ROOT / "docs" / "charsets.md"
 
 # ── Rules ────────────────────────────────────────────────────────────────

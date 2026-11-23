@@ -191,7 +191,7 @@ def prepare_markit() -> None:
 def prepare_code() -> None:
     paths = sorted(
         path
-        for pattern in ("src/**/*.rs", "tests/*.rs", "tools/*.py", "*.md", "docs/*.md")
+        for pattern in ("rust/src/**/*.rs", "rust/tests/*.rs", "tools/*.py", "*.md", "docs/*.md")
         for path in ROOT.glob(pattern)
     )
     write_docs("code", [path.read_text("utf-8") for path in paths])

@@ -16,4 +16,6 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> rust/target
       - run: tools/verify.sh
