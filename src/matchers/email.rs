@@ -13,9 +13,9 @@ pub const LIKE_EMAIL: &str = "LIKE_EMAIL";
 /// 5322. The local part is ASCII letters, digits and `_ - . +`; the domain is
 /// ASCII letters, digits and `-`; the part after its first dot is ASCII
 /// letters, digits, `-` and `.`. Each part needs at least one letter or
-/// digit, and the local part starts with one and has at most 64 characters. A dot or dash at the
-/// very end is left out, so an address that ends a sentence does not take the
-/// full stop with it.
+/// digit, and the local part starts with one and has at most 64 characters.
+/// A dot or dash at the very end is left out, so an address that ends a
+/// sentence does not take the full stop with it.
 pub struct LikeEmail;
 
 /// The longest local part RFC 5321 allows. The limit also bounds the work on

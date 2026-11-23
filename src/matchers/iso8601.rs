@@ -22,8 +22,9 @@ pub const DATE_ISO_8601: &str = "DATE_ISO_8601";
 ///
 /// A space may stand in place of the `T`. The time zone is read only after
 /// the seconds. The match stops before the first part that is incomplete, so
-/// `2022-01-06T08:` gives `2022-01-06T08`. Only the shape is checked: month
-/// 13 passes. Digits are ASCII.
+/// `2022-01-06T08:` gives `2022-01-06T08`. No digit may follow the day:
+/// `2022-01-061` is not a date. Only the shape is checked: month 13 passes.
+/// Digits are ASCII.
 pub struct Iso8601;
 
 /// Exactly `n` digits.
@@ -47,6 +48,9 @@ impl Matcher for Iso8601 {
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         // YYYY-MM-DD
         if !(digits(cur, 4) && one(cur, '-') && digits(cur, 2) && one(cur, '-') && digits(cur, 2)) {
+            return false;
+        }
+        if cur.peek().is_some_and(|c| c.is_ascii_digit()) {
             return false;
         }
         // From here on the date has matched. Each further part is taken only
@@ -145,6 +149,7 @@ mod tests {
             "2022/01/06",
             "22-01-06",
             "x2022-01-06",
+            "2022-01-061",
             "",
         ] {
             assert_eq!(Iso8601.match_prefix(text), None, "{text:?}");

@@ -17,8 +17,8 @@ pub const TIME: &str = "TIME";
 /// ```
 ///
 /// The hour is 0 to 24, and the minutes and seconds are 00 to 59. A time
-/// does not stand before a colon and more: `07:01:75:c5` is part of an
-/// address. Digits are ASCII.
+/// does not stand before another digit, or before a colon and more:
+/// `07:01:75:c5` is part of an address. Digits are ASCII.
 pub struct Time;
 
 /// Two digits from 00 to 59.
@@ -81,11 +81,13 @@ impl Matcher for Time {
         if !(cur.advance_if(|c| c == ':') && sixty(cur)) {
             cur.set_pos(after_minutes);
         }
-        // In "07:01:75:c5" the run goes on: it is an address, not a time.
-        let mut ahead = cur.clone();
-        if ahead.advance_if(|c| c == ':') && ahead.peek().is_some_and(is_letter_or_digit) {
+        // In "07:01:75:c5" and "10:305" the run goes on: it is not a time.
+        if cur.peek().is_some_and(|c| c.is_ascii_digit())
+            || cur.followed_by(|c| c == ':', is_letter_or_digit)
+        {
             return false;
         }
+        // The marker is optional here.
         marker(cur);
         true
     }
@@ -151,6 +153,9 @@ mod tests {
             "10:30:5",
             "23:59:60",
             "1:18:x",
+            // Another digit follows.
+            "10:305",
+            "10:30:155",
         ] {
             assert_eq!(Time.match_prefix(text), None, "{text:?}");
         }

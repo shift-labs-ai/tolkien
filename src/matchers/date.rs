@@ -129,9 +129,7 @@ fn numeric_date(cur: &mut Cursor<'_>) -> bool {
         _ => false,
     };
     // In "19.6.20.40" the run goes on: it is an address, not a date and more.
-    let mut ahead = cur.clone();
-    let goes_on = ahead.advance_if(|c| c == separator) && ahead.peek().is_some_and(is_ascii_digit);
-    shaped && !goes_on
+    shaped && !cur.followed_by(|c| c == separator, is_ascii_digit)
 }
 
 fn month_name_date(cur: &mut Cursor<'_>) -> bool {
@@ -141,8 +139,8 @@ fn month_name_date(cur: &mut Cursor<'_>) -> bool {
         match cur.advance_while(is_ascii_digit) {
             0 => false,
             6 if !cur.peek().is_some_and(is_letter) => true,
-            day => {
-                if day <= 2 {
+            digits => {
+                if digits <= 2 {
                     ordinal_ending(cur);
                 }
                 cur.advance_while(is_separator);

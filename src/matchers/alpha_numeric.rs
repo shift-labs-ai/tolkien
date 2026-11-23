@@ -13,7 +13,8 @@ pub const ALPHA_NUMERIC_SEQUENCE: &str = "ALPHA_NUMERIC_SEQUENCE";
 /// `B-52`.
 ///
 /// Unlike a [`Word`](super::Word), the run simply ends at the first character
-/// that does not belong to it.
+/// that does not belong to it. A dash at its end is left out; an underscore
+/// is kept, because identifiers and passwords end with one.
 pub struct AlphaNumericSequence;
 
 impl Matcher for AlphaNumericSequence {
@@ -31,6 +32,7 @@ impl Matcher for AlphaNumericSequence {
         }
         let (letters, _) =
             cur.advance_while2(is_letter, |c| is_digit(c) || is_dash(c) || is_underscore(c));
+        cur.back_while(is_dash);
         letters > 0
     }
 }
@@ -49,6 +51,9 @@ mod tests {
         assert_eq!(m.match_prefix("B-52)"), Some("B-52"));
         assert_eq!(m.match_prefix("hello)"), Some("hello"));
         assert_eq!(m.match_prefix("v2.0"), Some("v2"));
+        assert_eq!(m.match_prefix("armV7- next"), Some("armV7"));
+        assert_eq!(m.match_prefix("some_word__)"), Some("some_word__"));
+        assert_eq!(m.match_prefix("a_-"), Some("a_"));
     }
 
     #[test]

@@ -27,6 +27,7 @@ Pure standard library.
 from __future__ import annotations
 
 import argparse
+import bisect
 import collections
 import itertools
 import json
@@ -62,71 +63,112 @@ def lex(text: str) -> list[tuple[str, int, int]]:
     return tokens
 
 
-def evaluate(path: Path):
-    """Yields (label, outcome, kinds, span text, context) for every span."""
+def load(path: Path) -> list[dict]:
+    """The documents of a corpus. Each gets its text as bytes (`data`), its
+    tokens as (kind, start, end) in bytes (`tokens`), and its spans as
+    (start, end, label) in bytes (`spans`)."""
     records = [json.loads(line) for line in path.open(encoding="utf-8")]
-    whole = SEPARATOR.join(record["text"] for record in records)
-    tokens = lex(whole)
-    data = whole.encode("utf-8")
-    starts = [start for _, start, _ in tokens]
-
-    base = 0  # byte offset of the current document in `whole`
-    index = 0  # first token that can touch the current span
+    tokens = lex(SEPARATOR.join(record["text"] for record in records))
+    base = 0  # byte offset of the current document in the joined text
+    index = 0
     for record in records:
         text = record["text"]
+        record["data"] = text.encode("utf-8")
+        size = len(record["data"])
         # Byte offset of every character offset of this document.
         offsets = [0, *itertools.accumulate(len(ch.encode("utf-8")) for ch in text)]
-        for start, end, label in sorted(record["spans"]):
-            first, last = base + offsets[start], base + offsets[end]
-            while index > 0 and starts[index] > first:
-                index -= 1
-            while index + 1 < len(tokens) and starts[index + 1] <= first:
-                index += 1
-            stop = index
-            while stop < len(tokens) and starts[stop] < last:
-                stop += 1
-            touching = tokens[index:stop]
-            kinds = tuple(kind for kind, _, _ in touching)
-            aligned_start = touching[0][1] == first
-            aligned_end = touching[-1][2] == last
-            if len(touching) == 1 and aligned_start and aligned_end:
-                outcome = "exact"
-            elif len(touching) == 1:
-                outcome = "inside"
-            elif aligned_start and aligned_end:
-                outcome = "split"
-            else:
-                outcome = "ragged"
-            cut = " ".join(data[a:b].decode("utf-8") for _, a, b in touching)
-            context = data[max(base, first - 30) : last + 30].decode("utf-8", "replace")
-            yield label, outcome, kinds, text[start:end], cut, context.replace("\n", " ")
-        base += len(text.encode("utf-8")) + len(SEPARATOR)
-
-
-def stray(path: Path, kind: str):
-    """Yields the text and context of tokens of `kind` that no span expecting
-    that kind touches."""
-    labels = {label for label, kinds in EXPECTED.items() if kind in kinds}
-    records = [json.loads(line) for line in path.open(encoding="utf-8")]
-    for record in records:
-        text = record["text"]
-        data = text.encode("utf-8")
-        offsets = [0, *itertools.accumulate(len(ch.encode("utf-8")) for ch in text)]
-        covered = [(offsets[s], offsets[e]) for s, e, label in record["spans"] if label in labels]
-        record["data"], record["covered"] = data, covered
-    whole = SEPARATOR.join(record["text"] for record in records)
-    tokens = iter(lex(whole))
-    base = 0
-    token = next(tokens, None)
-    for record in records:
-        size = len(record["data"])
-        while token and token[1] < base + size:
-            name, start, end = token[0], token[1] - base, token[2] - base
-            if name == kind and not any(start < b and a < end for a, b in record["covered"]):
-                context = record["data"][max(0, start - 30) : end + 30].decode("utf-8", "replace")
-                yield record["data"][start:end].decode("utf-8"), context.replace("\n", " ")
-            token = next(tokens, None)
+        record["spans"] = sorted((offsets[start], offsets[end], label) for start, end, label in record["spans"])
+        record["tokens"] = []
+        while index < len(tokens) and tokens[index][1] < base + size:
+            kind, start, end = tokens[index]
+            record["tokens"].append((kind, start - base, end - base))
+            index += 1
         base += size + len(SEPARATOR)
+        # The tokens of the separator belong to no document.
+        while index < len(tokens) and tokens[index][1] < base:
+            index += 1
+    return records
+
+
+def context(data: bytes, start: int, end: int) -> str:
+    """The text of `data[start:end]` with thirty bytes around it, on one line."""
+    return data[max(0, start - 30) : end + 30].decode("utf-8", "replace").replace("\n", " ")
+
+
+def evaluate(records: list[dict]):
+    """Yields (label, outcome, kinds, span text, the span as it was cut,
+    context) for every span."""
+    for record in records:
+        data, tokens = record["data"], record["tokens"]
+        starts = [start for _, start, _ in tokens]
+        for first, last, label in record["spans"]:
+            touching = tokens[bisect.bisect_right(starts, first) - 1 : bisect.bisect_left(starts, last)]
+            aligned = touching[0][1] == first and touching[-1][2] == last
+            if len(touching) == 1:
+                outcome = "exact" if aligned else "inside"
+            else:
+                outcome = "split" if aligned else "ragged"
+            kinds = tuple(kind for kind, _, _ in touching)
+            cut = " ".join(data[a:b].decode("utf-8") for _, a, b in touching)
+            yield label, outcome, kinds, data[first:last].decode("utf-8"), cut, context(data, first, last)
+
+
+def stray(records: list[dict], kind: str):
+    """Yields the text and context of every token of `kind` that no span
+    expecting that kind touches."""
+    labels = {label for label, kinds in EXPECTED.items() if kind in kinds}
+    for record in records:
+        data = record["data"]
+        covered = [(a, b) for a, b, label in record["spans"] if label in labels]
+        for name, start, end in record["tokens"]:
+            if name == kind and not any(start < b and a < end for a, b in covered):
+                yield data[start:end].decode("utf-8"), context(data, start, end)
+
+
+def print_stray(name: str, records: list[dict], kind: str, examples: int) -> None:
+    found = collections.Counter()
+    contexts = {}
+    for text, around in stray(records, kind):
+        found[text] += 1
+        contexts.setdefault(text, around)
+    print(f"\n## {name}: {sum(found.values())} stray {kind} tokens, {len(found)} different")
+    for text, times in found.most_common(examples):
+        print(f"{times:6}  {text!r:40} …{contexts[text]}…")
+
+
+def print_misses(name: str, records: list[dict], label: str, examples: int) -> None:
+    misses = [
+        (outcome, kinds, value, cut, around)
+        for found, outcome, kinds, value, cut, around in evaluate(records)
+        if found == label and (outcome != "exact" or kinds[0] not in EXPECTED.get(label, kinds))
+    ]
+    patterns = collections.Counter((outcome, kinds) for outcome, kinds, _, _, _ in misses)
+    print(f"\n## {name}: {len(misses)} misses of {label}")
+    for (outcome, kinds), times in patterns.most_common(examples):
+        _, _, value, cut, around = next(m for m in misses if (m[0], m[1]) == (outcome, kinds))
+        print(f"{times:6}  {outcome:7} {' '.join(kinds)}")
+        print(f"        {value!r} cut as {cut!r}")
+        print(f"        …{around}…")
+
+
+def print_summary(name: str, records: list[dict]) -> None:
+    outcomes = collections.defaultdict(collections.Counter)
+    kinds_of_exact = collections.defaultdict(collections.Counter)
+    for label, outcome, kinds, _, _, _ in evaluate(records):
+        outcomes[label][outcome] += 1
+        if outcome == "exact":
+            kinds_of_exact[label][kinds[0]] += 1
+    print(f"\n## {name}")
+    print(f"{'label':22} {'spans':>6} {'exact':>6} {'inside':>6} {'split':>6} {'ragged':>6}  kinds of the exact tokens")
+    for label, counter in sorted(outcomes.items(), key=lambda item: -sum(item[1].values())):
+        total = sum(counter.values())
+        shares = " ".join(f"{100 * counter[outcome] / total:5.1f}%" for outcome in ("exact", "inside", "split", "ragged"))
+        top = ", ".join(f"{kind} {times}" for kind, times in kinds_of_exact[label].most_common(3))
+        mark = ""
+        if label in EXPECTED:
+            good = sum(times for kind, times in kinds_of_exact[label].items() if kind in EXPECTED[label])
+            mark = f"  [expected kind: {100 * good / total:.1f}%]"
+        print(f"{label:22} {total:6} {shares}  {top}{mark}")
 
 
 def main() -> None:
@@ -145,49 +187,13 @@ def main() -> None:
         sys.exit("no corpus: run python3 tools/corpora.py")
 
     for path in paths:
+        records = load(path)
         if args.stray:
-            found = collections.Counter()
-            contexts = {}
-            for text, context in stray(path, args.stray):
-                found[text] += 1
-                contexts.setdefault(text, context)
-            print(f"\n## {path.stem}: {sum(found.values())} stray {args.stray} tokens, {len(found)} different")
-            for text, times in found.most_common(args.examples):
-                print(f"{times:6}  {text!r:40} …{contexts[text]}…")
-            continue
-
-        outcomes = collections.defaultdict(collections.Counter)
-        kinds_of_exact = collections.defaultdict(collections.Counter)
-        misses = []
-        for label, outcome, kinds, value, cut, context in evaluate(path):
-            outcomes[label][outcome] += 1
-            if outcome == "exact":
-                kinds_of_exact[label][kinds[0]] += 1
-            wrong = outcome != "exact" or (label in EXPECTED and kinds[0] not in EXPECTED[label])
-            if label == args.label and wrong:
-                misses.append((outcome, kinds, value, cut, context))
-
-        if args.label:
-            patterns = collections.Counter((outcome, kinds) for outcome, kinds, _, _, _ in misses)
-            print(f"\n## {path.stem}: {len(misses)} misses of {args.label}")
-            for (outcome, kinds), times in patterns.most_common(args.examples):
-                example = next(m for m in misses if (m[0], m[1]) == (outcome, kinds))
-                print(f"{times:6}  {outcome:7} {' '.join(kinds)}")
-                print(f"        {example[2]!r} cut as {example[3]!r}")
-                print(f"        …{example[4]}…")
-            continue
-
-        print(f"\n## {path.stem}")
-        print(f"{'label':22} {'spans':>6} {'exact':>6} {'inside':>6} {'split':>6} {'ragged':>6}  kinds of the exact tokens")
-        for label, counter in sorted(outcomes.items(), key=lambda item: -sum(item[1].values())):
-            total = sum(counter.values())
-            share = lambda name: f"{100 * counter[name] / total:5.1f}%"
-            top = ", ".join(f"{kind} {times}" for kind, times in kinds_of_exact[label].most_common(3))
-            mark = ""
-            if label in EXPECTED:
-                good = sum(times for kind, times in kinds_of_exact[label].items() if kind in EXPECTED[label])
-                mark = f"  [expected kind: {100 * good / total:.1f}%]"
-            print(f"{label:22} {total:6} {share('exact')} {share('inside')} {share('split')} {share('ragged')}  {top}{mark}")
+            print_stray(path.stem, records, args.stray, args.examples)
+        elif args.label:
+            print_misses(path.stem, records, args.label, args.examples)
+        else:
+            print_summary(path.stem, records)
 
 
 if __name__ == "__main__":

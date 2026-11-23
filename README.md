@@ -87,8 +87,7 @@ Known weak spots:
   `21 para`.
 - An ISO date takes a two-digit number after a space as its hour:
   `2022-01-06 12 apples`.
-- A word keeps a dash or an apostrophe at its end, and a possessive is one
-  word: `word-`, `dogs'`, `Abby's`.
+- A possessive is one word: `Abby's`.
 - The end of a MAC address is a `TIME`: `09:54:39` in `1d:d8:97:09:54:39`.
   A matcher reads forward only, so it cannot see what stands before it.
 
@@ -169,7 +168,8 @@ pattern over character names (`FULL STOP`, `COMMA`, `QUESTION MARK`).
 
 About 57 MB/s and 21 million tokens per second with every built-in matcher,
 on an Apple M5 laptop, over 1.2 MB of English technical prose. The slowest
-input measured is a long run of one short piece, such as `a.` or `1:`, at about 19 MB/s.
+input measured is a long run of one short piece, such as `a.` or `1:`, at
+about 19 MB/s.
 
 ```bash
 cargo run --release --example throughput -- FILE
@@ -191,12 +191,13 @@ The design is the same. These behaviours changed:
 | `LINE_TERMINATION` | Included the letters `v` and `f` and the backslash | Line-break classes BK, CR, LF, NL |
 | Character sets | Written by hand | Generated from the Unicode data; see the notes below |
 | `LIKE_EMAIL` | Kept a full stop after the address; any length before the `@`, which could start with `.` or `-` | Leaves the full stop out; at most 64 characters before the `@`, starting with a letter or a digit |
-| `TIME` | Accepted hours 50 to 99 and any digits as seconds; read `10:30 Am` in `10:30 Amsterdam`; needed minutes | Hours 0 to 24, seconds 00 to 59; the marker must end where its word ends; `4 PM` is a time; not a time before a colon and more (`07:01:75:c5`) |
+| `TIME` | Accepted hours 50 to 99 and any digits as seconds; read `10:30 Am` in `10:30 Amsterdam`; needed minutes | Hours 0 to 24, seconds 00 to 59; the marker must end where its word ends; `4 PM` is a time; not a time before another digit or before a colon and more (`07:01:75:c5`) |
+| `DATE_ISO_8601` | Took the start of `2022-01-061` | No digit may follow the day |
 | `TIME`, `DATE`, `DATE_ISO_8601` digits | Any Unicode digit | ASCII digits |
 | `DATE` in numbers | Any three numbers of the right lengths with any two separators: `1.2.3`, `1/04 9`, `3,4,15`, `99/99/9999` | The same separator twice (never a comma, a space only after a leading year); month 1 to 12, day 1 to 31; a closing year of two or four digits; not the start of a longer run |
 | `DATE` with a month name | Had to end at white space, a full stop, a comma or a colon, so `(Feb 17, 2009)` was not a date; no ordinals | May end anywhere but before a letter; `17th Feb 2009` is a date |
-| `WORD` | Could start with a dash or an apostrophe: `--help`, `-word` | Starts with a letter |
-| `ALPHA_NUMERIC_SEQUENCE` | Could start with a dash or an underscore | Starts with a letter or a digit |
+| `WORD` | Could start or end with a dash or an apostrophe: `--help`, `-word`, `dogs'` | Starts and ends with a letter |
+| `ALPHA_NUMERIC_SEQUENCE` | Could start with a dash or an underscore, and end with a dash | Starts with a letter or a digit; does not end with a dash |
 | `LIKE_NUMBER` | Any amount of punctuation before the first digit; kept the punctuation after the last one (`1.`, `100%,`) | At most two punctuation characters before it; ends with a number character or a percent sign |
 | `CURRENCY` amounts | Could start with any run of full stops and commas; one trailing full stop or comma dropped after a symbol | Start with a digit or one full stop; all trailing full stops and commas dropped |
 | `CURRENCY` names | Codes and abbreviations matched in any case (`5 km`, `5 all`); a name could be followed by a digit or an apostrophe (`94 won't`) | Names in their common cases, codes and abbreviations only as written; no letter, digit or apostrophe after the name |

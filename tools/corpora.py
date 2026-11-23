@@ -36,22 +36,20 @@ Pure standard library.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
+
+import downloads
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "corpus" / "raw"
 DOCS = ROOT / "corpus" / "docs"
 LABELLED = ROOT / "corpus" / "labelled"
 MARKIT = Path.home() / "Projects" / "markit"
-USER_AGENT = "tolkien-corpora/0.1 (lexer test corpus; python-urllib)"
 
 # name -> (url, sha256)
 PINNED = {
@@ -84,31 +82,9 @@ WIKIPEDIA = [
 ]
 
 
-def download(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    for attempt in range(6):
-        try:
-            with urllib.request.urlopen(request, timeout=300) as response:
-                return response.read()
-        except urllib.error.HTTPError as error:
-            # Wikipedia answers 429 to requests that come too close together.
-            if error.code != 429 or attempt == 5:
-                raise
-            time.sleep(5 * (attempt + 1))
-    raise AssertionError("unreachable")
-
-
 def fetch_pinned() -> None:
     for name, (url, sha256) in PINNED.items():
-        path = RAW / name
-        if not path.exists():
-            print(f"fetching {name}")
-            path.write_bytes(download(url))
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        if sha256 is None:
-            sys.exit(f"{name}: no hash pinned; its sha256 is {digest}")
-        if digest != sha256:
-            sys.exit(f"{name}: sha256 {digest} does not match the pinned {sha256}")
+        downloads.pinned(url, RAW / name, sha256)
 
 
 def fetch_wikipedia() -> None:
@@ -127,11 +103,12 @@ def fetch_wikipedia() -> None:
                 "titles": title,
             }
         )
-        pages = json.loads(download(f"https://{lang}.wikipedia.org/w/api.php?{query}"))
+        pages = json.loads(downloads.download(f"https://{lang}.wikipedia.org/w/api.php?{query}"))
         text = "".join(page.get("extract", "") for page in pages["query"]["pages"].values())
         if len(text) < 1000:
             sys.exit(f"wikipedia {lang}: {title} came back with {len(text)} characters")
         path.write_text(text, "utf-8")
+        # Wikipedia answers 429 to requests that come too close together.
         time.sleep(1)
 
 

@@ -18,7 +18,7 @@ cargo run --release --example fuzz -- --seconds 60 corpus/docs/*.txt
 | `tab` | Text Anonymization Benchmark, dev split: court cases labelled by hand | 127 | 10,078 |
 | `wikipedia` | one article in each of 24 languages and scripts | 24 | none |
 | `markit` | markit's benchmark documents converted to markdown | 10 | none |
-| `code` | this repository's sources | 28 | none |
+| `code` | this repository's sources | 31 | none |
 
 The ai4privacy text is generated, and it shows: currencies are glued to
 amounts (`764,336.48Rufiyaa`), and a "time" can be the bare number `20`. Its
@@ -106,8 +106,8 @@ currency list knows in some case (`3L7gwx…`, `0da8`).
 Nothing, in 22 MB of documents and 5.1 million mutations over three seeds:
 no gap in coverage, no token that breaks its kind's rules, no token that
 depends on what stands before it, and no text slower than its length
-allows. Its checks were tested by planting eight bugs in the matchers, one
-at a time. It reported seven within five seconds and cut each text down to
+allows. Its checks were tested by planting twelve bugs in the matchers, one
+at a time. It reported eleven within five seconds and cut each text down to
 a handful of characters (`"a@e.c."`, `"25:00"`, `"2023 8-8"`). It missed
 one, a word list that accepted any prefix of a month name; the date check
 now holds its own list of months and catches it.

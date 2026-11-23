@@ -53,6 +53,8 @@ impl Matcher for LikeUrl {
         }
         let after_prefix = cur.pos();
         cur.advance_while2(is_letter_or_digit, is_url_symbol);
+        // How many closing brackets of each kind the run holds beyond its
+        // opening ones. That many, at most, are dropped from its end.
         let run = cur.since(after_prefix);
         let mut unopened = [(')', '('), (']', '[')].map(|(close, open)| {
             (

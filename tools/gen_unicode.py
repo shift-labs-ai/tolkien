@@ -22,11 +22,11 @@ Pure standard library. The UCD files are downloaded once into tools/.ucd/
 from __future__ import annotations
 
 import argparse
-import hashlib
 import re
 import sys
-import urllib.request
 from pathlib import Path
+
+import downloads
 
 VERSION = "18.0.0"
 SHA256 = {
@@ -154,17 +154,8 @@ NAMED_SETS = [
 
 
 def fetch(name: str) -> str:
-    path = CACHE / name
-    if not path.exists():
-        CACHE.mkdir(parents=True, exist_ok=True)
-        url = f"https://www.unicode.org/Public/{VERSION}/ucd/{name}"
-        with urllib.request.urlopen(url, timeout=120) as response:
-            path.write_bytes(response.read())
-    data = path.read_bytes()
-    digest = hashlib.sha256(data).hexdigest()
-    if digest != SHA256[name]:
-        sys.exit(f"{name}: sha256 {digest} does not match the pinned {SHA256[name]}")
-    return data.decode("utf-8")
+    url = f"https://www.unicode.org/Public/{VERSION}/ucd/{name}"
+    return downloads.pinned(url, CACHE / name, SHA256[name]).decode("utf-8")
 
 
 def load_unicode_data() -> tuple[dict[int, tuple[str, str]], list[tuple[int, int, str]]]:

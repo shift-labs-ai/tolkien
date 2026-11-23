@@ -17,7 +17,8 @@ cargo run --release --example fuzz -- corpus/docs/*.txt   # property checks on r
 python3 tools/evaluate.py                          # score tokens against labelled spans
 ```
 
-`tools/verify.sh` runs rustfmt, clippy with `-D warnings`, the tests, the
+`tools/verify.sh` runs rustfmt, clippy with `-D warnings`, the tests, ten
+seconds of the fuzzer on this repository's own text, the
 `wasm32-unknown-unknown` build of the library and the stale check of the
 generated tables. CI runs that script and nothing else, so a check is added
 there.
@@ -43,6 +44,8 @@ there.
   rules a second time, independently of the matchers
 - `tools/corpora.py`, `tools/evaluate.py`: fetch the benchmark corpora and
   score the tokens against their labels; `docs/benchmarks.md` has the results
+- `tools/downloads.py`: downloading and hash pinning, for the two scripts
+  that fetch
 
 ## Key patterns
 
@@ -60,8 +63,13 @@ there.
   its local part and the number matcher its leading punctuation for this
   reason. `long_runs_are_lexed_in_linear_time` in `tests/lexer.rs` guards it;
   add the new matcher's worst run there.
-- **Leaving out trailing punctuation.** A matcher whose run can end in
-  sentence punctuation steps back over it with `Cursor::back_while`.
+- **Leaving out trailing punctuation.** A token does not end with the
+  punctuation that joins its parts: a number with a full stop, a word with a
+  dash, an address with a dot. A matcher whose run can end that way steps
+  back over it with `Cursor::back_while`.
+- **Not the start of something longer.** A token of a fixed shape is not
+  taken when its run plainly goes on: a date before the same separator and
+  a digit, a time before a colon and more. `Cursor::followed_by` asks.
 - **Order.** A matcher is tried before the kinds in its `overrides`. Other
   matchers keep the order of `matchers::all()`, most specific first. Adding
   a matcher means choosing its place there.

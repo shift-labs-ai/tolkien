@@ -13,7 +13,8 @@ pub const WORD: &str = "WORD";
 /// `first-second`, `don't`.
 ///
 /// Anything else in the run means it is not a word, so `word123` and
-/// `some_word` do not match at all.
+/// `some_word` do not match at all. A word ends with a letter: a dash or an
+/// apostrophe at the end of the run is left out, so `dogs'` gives `dogs`.
 pub struct Word;
 
 impl Matcher for Word {
@@ -30,7 +31,7 @@ impl Matcher for Word {
             return false;
         }
         let mut apostrophe = false;
-        loop {
+        let terminated = loop {
             cur.advance_while(|c| is_letter(c) || is_dash(c));
             match cur.peek() {
                 Some(c) if is_apostrophe(c) && !apostrophe => {
@@ -38,10 +39,12 @@ impl Matcher for Word {
                     cur.advance();
                 }
                 // A second apostrophe lands here too and is not a termination.
-                Some(c) => return is_word_termination(c),
-                None => return true,
+                Some(c) => break is_word_termination(c),
+                None => break true,
             }
-        }
+        };
+        cur.back_while(|c| is_dash(c) || is_apostrophe(c));
+        terminated
     }
 }
 
@@ -59,6 +62,9 @@ mod tests {
         assert_eq!(Word.match_prefix("somewor'd"), Some("somewor'd"));
         assert_eq!(Word.match_prefix("don’t stop"), Some("don’t"));
         assert_eq!(Word.match_prefix("naïve, café"), Some("naïve"));
+        assert_eq!(Word.match_prefix("word- next"), Some("word"));
+        assert_eq!(Word.match_prefix("dogs' toys"), Some("dogs"));
+        assert_eq!(Word.match_prefix("well-'"), Some("well"));
     }
 
     #[test]

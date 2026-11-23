@@ -97,7 +97,11 @@ impl Checker {
                     detail,
                 });
             }
-            let matcher = self.matchers.iter().find(|m| m.kind() == token.kind)?;
+            let matcher = self
+                .matchers
+                .iter()
+                .find(|m| m.kind() == token.kind)
+                .expect("shape rejects a kind that no built-in matcher produces");
             if matcher.match_prefix(token.text) != Some(token.text) {
                 let detail = format!(
                     "{:?} gives {:?}",
@@ -130,8 +134,8 @@ impl Checker {
             }
         }
 
-        // A release build lexes its slowest input at about 10 MB/s, which is
-        // 0.1 microseconds a byte. Twenty times that, and a floor for noise.
+        // A release build lexes its slowest input at well over 10 MB/s, which
+        // is 0.1 microseconds a byte. Twenty times that, and a floor for noise.
         let budget = Duration::from_millis(20) + Duration::from_nanos(2_000) * text.len() as u32;
         if elapsed > budget {
             // Measure again before blaming the lexer for a busy machine.
@@ -194,12 +198,17 @@ fn shape(token: &Token<'_>, rest: &str) -> Result<(), String> {
 
     match token.kind {
         WORD => {
+            let joins = |c| is_dash(c) || is_apostrophe(c);
             require(is_letter(first), "does not start with a letter")?;
-            let inside = |c| is_letter(c) || is_dash(c) || is_apostrophe(c);
-            require(text.chars().all(inside), "holds a character a word cannot")?;
-            require(count(is_apostrophe) <= 1, "holds two apostrophes")?;
+            require(is_letter(last), "does not end with a letter")?;
             require(
-                next.is_none_or(is_word_termination),
+                text.chars().all(|c| is_letter(c) || joins(c)),
+                "holds a character a word cannot",
+            )?;
+            require(count(is_apostrophe) <= 1, "holds two apostrophes")?;
+            let (_, after) = split_while(rest, joins);
+            require(
+                after.chars().next().is_none_or(is_word_termination),
                 "is not followed by a termination",
             )
         }
@@ -209,9 +218,14 @@ fn shape(token: &Token<'_>, rest: &str) -> Result<(), String> {
                 is_letter_or_digit(first),
                 "does not start with a letter or a digit",
             )?;
+            require(!is_dash(last), "ends with a dash")?;
             require(text.chars().all(inside), "holds a character the run cannot")?;
             require(count(is_letter) > 0, "holds no letter")?;
-            require(!next.is_some_and(inside), "stops before the end of its run")
+            let (_, after) = split_while(rest, is_dash);
+            require(
+                !after.starts_with(inside),
+                "stops before the end of its run",
+            )
         }
         LIKE_NUMBER => {
             let inside = |c| is_number(c) || is_number_punctuation(c);
@@ -291,11 +305,8 @@ fn shape(token: &Token<'_>, rest: &str) -> Result<(), String> {
                     .get(range)
                     .is_some_and(|part| part.iter().all(u8::is_ascii_digit))
             };
-            let date = digits(0..4)
-                && bytes[4] == b'-'
-                && digits(5..7)
-                && bytes[7] == b'-'
-                && digits(8..10);
+            let dash = |at: usize| bytes.get(at) == Some(&b'-');
+            let date = digits(0..4) && dash(4) && digits(5..7) && dash(7) && digits(8..10);
             require(date, "does not start with YYYY-MM-DD")?;
             let time_char = |c: char| c.is_ascii_digit() || "T :.+-Z".contains(c);
             require(
@@ -305,7 +316,9 @@ fn shape(token: &Token<'_>, rest: &str) -> Result<(), String> {
             require(
                 last.is_ascii_digit() || last == 'Z',
                 "ends in the middle of a part",
-            )
+            )?;
+            let day_goes_on = text.len() == 10 && next.is_some_and(|c| c.is_ascii_digit());
+            require(!day_goes_on, "has a digit after its day")
         }
         DATE => {
             require(last.is_ascii_digit(), "does not end with an ASCII digit")?;
@@ -463,12 +476,14 @@ fn is_month(word: &str) -> bool {
         "november",
         "december",
     ];
-    let lower = word.to_lowercase();
-    let known = MONTHS
-        .iter()
-        .any(|month| lower == *month || lower == month[..3]);
-    let capitalised = word[..1].to_uppercase() + &lower[1..];
-    known && (word == lower || word == word.to_uppercase() || word == capitalised)
+    let lower = word.to_ascii_lowercase();
+    let known = word.is_ascii()
+        && MONTHS
+            .iter()
+            .any(|month| lower == *month || lower == month[..3]);
+    let capitalised =
+        known && word[..1] == lower[..1].to_ascii_uppercase() && word[1..] == lower[1..];
+    known && (word == lower || word == word.to_ascii_uppercase() || capitalised)
 }
 
 /// `H:MM` or `HH:MM`, then `:SS`, then a marker, the last two optional; or
@@ -490,25 +505,27 @@ fn time_shape(text: &str, rest: &str) -> Result<(), String> {
     let tail = &tail[minutes.and(sixty(tail)).unwrap_or(0)..];
     let marker = tail.strip_prefix(' ').unwrap_or(tail).to_ascii_lowercase();
     let markers = ["am", "pm", "a.m", "p.m", "a.m.", "p.m."];
-    if minutes.is_some() {
-        require(
-            marker.is_empty() || markers.contains(&marker.as_str()),
-            "ends with something that is not AM or PM",
-        )?;
-        let mut after = rest.chars();
-        let goes_on = after.next() == Some(':') && after.next().is_some_and(is_letter_or_digit);
-        require(
-            !(marker.is_empty() && goes_on),
-            "is the start of a longer run",
-        )
-    } else {
+    if minutes.is_none() {
         require(
             markers.contains(&marker.as_str()),
             "has neither minutes nor AM or PM",
         )?;
-        require(
+        return require(
             (1..=12).contains(&hour),
             "has an hour outside 1 to 12 before AM or PM",
+        );
+    }
+    if marker.is_empty() {
+        let mut after = rest.chars();
+        let goes_on = match after.next() {
+            Some(':') => after.next().is_some_and(is_letter_or_digit),
+            next => next.is_some_and(|c| c.is_ascii_digit()),
+        };
+        require(!goes_on, "is the start of a longer run")
+    } else {
+        require(
+            markers.contains(&marker.as_str()),
+            "ends with something that is not AM or PM",
         )
     }
 }
@@ -535,136 +552,19 @@ impl Rng {
 }
 
 /// Pieces that start, end or break a token of some kind.
+#[rustfmt::skip]
 const DICTIONARY: &[&str] = &[
-    "@",
-    "#",
-    "$",
-    "€",
-    "£",
-    "₪",
-    "%",
-    "+",
-    "-",
-    "--",
-    "_",
-    ".",
-    "..",
-    ",",
-    ":",
-    ";",
-    "/",
-    "\\",
-    "'",
-    "’",
-    "\"",
-    "(",
-    ")",
-    "[",
-    "]",
-    "!",
-    "?",
-    "~",
-    "=",
-    "*",
-    "&",
-    " ",
-    "  ",
-    "\t",
-    "\n",
-    "\r\n",
-    "\u{b}",
-    "\u{85}",
-    "\u{a0}",
-    "\u{2028}",
-    "\u{3000}",
-    "\u{200b}",
-    "\u{200f}",
-    "\u{feff}",
-    "\u{301}",
-    "0",
-    "1",
-    "5",
-    "9",
-    "12",
-    "24",
-    "25",
-    "59",
-    "60",
-    "99",
-    "2009",
-    "20091",
-    "123456",
-    "٣",
-    "½",
-    "Ⅷ",
-    "a",
-    "Z",
-    "é",
-    "ß",
-    "ש",
-    "ا",
-    "漢",
-    "あ",
-    "ʼ",
-    "𝄞",
-    "👍",
-    "\u{1F469}\u{200D}\u{1F4BB}",
-    "T",
-    "Z",
-    "am",
-    "PM",
-    "a.m.",
-    "p.m",
-    "Jan",
-    "Feb",
-    "May",
-    "march",
-    "DECEMBER",
-    "Sept",
-    "USD",
-    "usd",
-    "Dollars",
-    "kr.",
-    "km",
-    "K",
-    "all",
-    "Convertible Mark",
-    "http://",
-    "https://",
-    "www.",
-    "ftp://",
-    ".com",
-    ".co.uk",
-    "@example.com",
-    "x@y.z",
-    "2022-01-06",
-    "2022-01-06T08:42:27.5+02:00",
-    "02/17/2009",
-    "17 Feb 2009",
-    "10:30",
-    "10:30:15 PM",
-    "$5",
-    "5 USD",
-    "#tag",
-    "@name",
-    "1,000.50",
-    "-.5",
-    "6.0.1",
-    "100%",
-    "—",
-    "–",
-    "‐",
-    "−",
-    "。",
-    "،",
-    "？",
-    "！",
-    "＠",
-    "＃",
-    "＿",
-    "．",
-    "１２３",
-    "：",
+    "@", "#", "$", "€", "£", "₪", "%", "+", "-", "--", "_", ".", "..", ",", ":", ";", "/", "\\",
+    "'", "’", "\"", "(", ")", "[", "]", "!", "?", "~", "=", "*", "&", " ", "  ", "\t", "\n",
+    "\r\n", "\u{b}", "\u{85}", "\u{a0}", "\u{2028}", "\u{3000}", "\u{200b}", "\u{200f}",
+    "\u{feff}", "\u{301}", "0", "1", "5", "9", "12", "24", "25", "59", "60", "99", "2009",
+    "20091", "123456", "٣", "½", "Ⅷ", "a", "Z", "é", "ß", "ש", "ا", "漢", "あ", "ʼ", "𝄞", "👍",
+    "\u{1F469}\u{200D}\u{1F4BB}", "T", "Z", "am", "PM", "a.m.", "p.m", "Jan", "Feb", "May",
+    "march", "DECEMBER", "Sept", "USD", "usd", "Dollars", "kr.", "km", "K", "all",
+    "Convertible Mark", "http://", "https://", "www.", "ftp://", ".com", ".co.uk", "@example.com",
+    "x@y.z", "2022-01-06", "2022-01-06T08:42:27.5+02:00", "02/17/2009", "17 Feb 2009", "10:30",
+    "10:30:15 PM", "$5", "5 USD", "#tag", "@name", "1,000.50", "-.5", "6.0.1", "100%", "—", "–",
+    "‐", "−", "。", "،", "？", "！", "＠", "＃", "＿", "．", "１２３", "：",
 ];
 
 /// The longest window of a document that is mutated. Short texts run more
@@ -836,6 +736,10 @@ fn main() -> ExitCode {
         match arg.as_str() {
             "--seconds" => seconds = number("--seconds"),
             "--seed" => seed = number("--seed").max(1),
+            option if option.starts_with("--") => {
+                eprintln!("fuzz: unknown option {option}");
+                return ExitCode::from(2);
+            }
             _ => files.push(arg),
         }
     }

@@ -75,6 +75,18 @@ impl<'t> Cursor<'t> {
         }
     }
 
+    /// True when `first` accepts the character at the cursor and `second`
+    /// the one after it. The cursor does not move: this is how a matcher
+    /// asks whether its token is only the start of something longer.
+    pub fn followed_by(
+        &self,
+        first: impl FnOnce(char) -> bool,
+        second: impl FnOnce(char) -> bool,
+    ) -> bool {
+        let mut ahead = self.clone();
+        ahead.advance_if(first) && ahead.peek().is_some_and(second)
+    }
+
     /// The character just before the cursor, or `None` at the start.
     pub fn prev(&self) -> Option<char> {
         self.text[..self.pos].chars().next_back()
@@ -208,6 +220,16 @@ mod tests {
         assert_eq!(cur.back_while(|c| c == '.'), 0);
         assert_eq!(cur.back_while(|_| true), 2);
         assert_eq!(cur.pos(), 0);
+    }
+
+    #[test]
+    fn followed_by_looks_at_two_characters_without_moving() {
+        let cur = Cursor::at("a:é", 1);
+        assert!(cur.followed_by(|c| c == ':', |c| c == 'é'));
+        assert!(!cur.followed_by(|c| c == ':', |c| c == 'e'));
+        assert!(!cur.followed_by(|c| c == ';', |_| true));
+        assert!(!Cursor::at("a:", 1).followed_by(|c| c == ':', |_| true));
+        assert_eq!(cur.pos(), 1);
     }
 
     #[test]
