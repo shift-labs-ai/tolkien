@@ -19,11 +19,20 @@ cargo run --release --example throughput -- FILE   # measure speed
 cargo run --release --example fuzz -- ../corpus/docs/*.txt   # property checks on real and mutated text
 ```
 
-`tools/verify.sh` runs rustfmt, clippy with `-D warnings`, the tests, ten
+`tools/verify.sh` runs rustfmt, clippy with `-D warnings` (the library with
+the shared binding layer, then each binding for its target), the tests, ten
 seconds of the fuzzer on this repository's own text, the
 `wasm32-unknown-unknown` build of the library and the stale check of the
-generated tables. CI runs that script and nothing else, so a check is added
-there.
+generated tables. Then it builds the addon and the wasm package, runs the
+TypeScript checks and tests against them, and packs both packages. CI runs
+that script and nothing else, so a check is added there.
+
+```bash
+bun install                 # once
+npm run build:native        # the addon for this machine, tolkien.<platform>.node
+npm run build:wasm          # npm/wasm: the engine and its JavaScript
+bun test                    # the Node package, and the wasm package against it
+```
 
 ## Architecture
 
@@ -53,6 +62,18 @@ there.
   as patterns, added with `Lexer::with` and compared with asking every
   matcher and with each other
 - `rust/tests/cli.rs`: tests of the command
+- `rust/src/describe.rs`: a lexer from matchers described as JSON, and its
+  tokens as arrays; shared by the two bindings
+- `rust/src/bindings.rs`, `rust/src/wasm.rs`: the Node addon (napi-rs) and
+  the browser API (wasm-bindgen) over `describe.rs`
+- `src/describe.ts`: the builders a JavaScript user describes a matcher
+  with; `src/lexer.ts`: `Lexer` and `Tokens` over either engine;
+  `src/index.ts` and `src/wasm.ts`: the entry of each package
+- `native.cjs`: loads the addon of the platform
+- `npm/`: a package for each platform's addon, and `npm/wasm` for browsers
+- `test/fixtures.ts`: matchers and texts both packages are tested with
+- `.github/workflows/release.yml`: builds every addon and the wasm package
+  from a `v*` tag and publishes them
 - `tools/verify.sh`: every check, for CI and for a person
 - `rust/examples/fuzz.rs`: the fuzzer; its `shape` function states every kind's
   rules a second time, independently of the matchers
@@ -63,9 +84,27 @@ there.
 
 ## Key patterns
 
-- **No dependencies.** The crate has none, and the library builds for
-  `wasm32-unknown-unknown`. A new dependency needs a reason and must keep
-  that build.
+- **No dependencies.** The library has none, and builds for
+  `wasm32-unknown-unknown`. The ones in `rust/Cargo.toml` are optional and
+  belong to the bindings: each is behind the feature of a binding, and the
+  default build compiles none of them. A dependency of the library itself
+  needs a reason and must keep the wasm build.
+- **One layout for a Rust engine with npm packages**, the one markit has:
+  the crate in `rust/` with the bindings as features (`napi`, `wasm`), the
+  Node package at the root (`package.json`, `src/`, `native.cjs`), a
+  package for each platform's addon and one for the browser in `npm/`.
+  Versions are the same in `rust/Cargo.toml`, `package.json` and every
+  `npm/*/package.json`; the release workflow refuses a tag that differs.
+- **A binding passes data, never a callback.** A call from Rust into
+  JavaScript for every token would cost far more than the token. Matchers
+  come over once as JSON and become `Pattern`s (`describe.rs`), and tokens
+  go back as two arrays, kinds and ends, with ends in UTF-16 code units.
+  What both bindings need is in `describe.rs`, behind the `describe`
+  feature, which links anywhere and so has tests; `bindings.rs` and
+  `wasm.rs` only hand it to napi and to wasm-bindgen.
+- **A step has three homes**: `Step` in `pattern.rs`, `StepSpec` in
+  `describe.rs` and a builder in `src/describe.ts`. Add to all three, and
+  to `every_step_can_be_described`.
 - **No regular expressions.** A matcher reads characters from the cursor.
 - **Matcher contract.** `matches` returns `true` with the cursor just past
   the token, or `false` with the cursor anywhere. The lexer gives each

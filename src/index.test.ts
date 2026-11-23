@@ -1,0 +1,132 @@
+import { describe, expect, test } from "bun:test";
+import { matchers, texts } from "../test/fixtures.js";
+import { Lexer, matcher, not, one, run, type Token, text } from "./index.js";
+
+const kindsAndTexts = (tokens: Iterable<Token>) =>
+  [...tokens]
+    .filter((token) => token.kind !== "WHITE_SPACE")
+    .map((token) => [token.kind, token.text]);
+
+describe("Lexer", () => {
+  test("names the parts of a sentence", () => {
+    const tokens = new Lexer().tokens(
+      "Dana paid $1,250.50 on Feb 17, 2009 at 8:05 PM",
+    );
+    expect(kindsAndTexts(tokens)).toEqual([
+      ["WORD", "Dana"],
+      ["WORD", "paid"],
+      ["CURRENCY", "$1,250.50"],
+      ["WORD", "on"],
+      ["DATE", "Feb 17, 2009"],
+      ["WORD", "at"],
+      ["TIME", "8:05 PM"],
+    ]);
+  });
+
+  test("lists its kinds in the order they are tried", () => {
+    const kinds = new Lexer().kinds;
+    expect(kinds[0]).toBe("DATE_ISO_8601");
+    expect(kinds).toContain("WORD");
+    expect(kinds.at(-1)).toBe("OTHER");
+    expect(new Lexer(matchers).kinds.slice(0, 4)).toEqual([
+      "CARD_NUMBER",
+      "IPV4",
+      "MAC_ADDRESS",
+      "KEYWORD",
+    ]);
+  });
+
+  test("tokens cover the text, with offsets into the string", () => {
+    const lexer = new Lexer(matchers);
+    for (const input of texts) {
+      const tokens = lexer.tokens(input);
+      let position = 0;
+      for (let index = 0; index < tokens.length; index++) {
+        expect(tokens.start(index)).toBe(position);
+        expect(tokens.end(index)).toBeGreaterThan(position);
+        expect(tokens.text(index)).toBe(
+          input.slice(tokens.start(index), tokens.end(index)),
+        );
+        position = tokens.end(index);
+      }
+      expect(position).toBe(input.length);
+      expect([...tokens].map((token) => token.text).join("")).toBe(input);
+    }
+  });
+
+  test("an offset counts what a string index counts", () => {
+    const tokens = [...new Lexer().tokens("é 👍 x")];
+    expect(tokens.map((token) => [token.kind, token.start, token.end])).toEqual(
+      [
+        ["WORD", 0, 1],
+        ["WHITE_SPACE", 1, 2],
+        ["SYMBOL", 2, 4],
+        ["WHITE_SPACE", 4, 5],
+        ["WORD", 5, 6],
+      ],
+    );
+  });
+
+  test("matchers of your own are tried before the built-in ones", () => {
+    const tokens = new Lexer(matchers).tokens(texts[2]);
+    expect(kindsAndTexts(tokens)).toEqual([
+      ["WORD", "Card"],
+      ["CARD_NUMBER", "4111 1111-1111 1111"],
+      ["WORD", "from"],
+      ["IPV4", "192.168.1.20"],
+      ["SYMBOL", "("],
+      ["MAC_ADDRESS", "1d:d8:97:09:54:39"],
+      ["SYMBOL", ")"],
+      ["SYMBOL", "."],
+      ["KEYWORD", "Secret"],
+      ["SYMBOL", ":"],
+      ["DATE", "17.02.2009"],
+      ["SYMBOL", ","],
+      ["ALPHA_NUMERIC_SEQUENCE", "v1"],
+      ["LIKE_NUMBER", ".2"],
+    ]);
+    expect(tokens.ofKind("IPV4", "MAC_ADDRESS", "NO_SUCH_KIND")).toEqual([
+      { kind: "IPV4", start: 30, end: 42, text: "192.168.1.20" },
+      { kind: "MAC_ADDRESS", start: 44, end: 61, text: "1d:d8:97:09:54:39" },
+    ]);
+  });
+
+  test("a token is read by its index", () => {
+    const tokens = new Lexer().tokens("a b");
+    expect(tokens.length).toBe(3);
+    expect(tokens.at(2)).toEqual({ kind: "WORD", start: 2, end: 3, text: "b" });
+    expect(tokens.at(3)).toBeUndefined();
+    expect(tokens.at(-1)).toBeUndefined();
+    expect(tokens.at(0.5)).toBeUndefined();
+    expect(new Lexer().tokens("").length).toBe(0);
+  });
+
+  test("a long text gives the tokens of its parts", () => {
+    // Long enough to be lexed on several threads.
+    const sentence = "Paid $5 on Feb 17, 2009 to a@b.cd for 3 items. ";
+    const lexer = new Lexer();
+    const once = [...lexer.tokens(sentence)];
+    const tokens = lexer.tokens(sentence.repeat(20_000));
+    expect(tokens.length).toBe(once.length * 20_000);
+    const last = tokens.length - once.length;
+    for (let index = 0; index < once.length; index++) {
+      expect(tokens.kind(last + index)).toBe(once[index].kind);
+      expect(tokens.text(last + index)).toBe(once[index].text);
+    }
+  });
+
+  test("a wrong matcher is refused with a reason", () => {
+    expect(() => new Lexer([matcher("WORD", [text("x")])])).toThrow(
+      "two matchers produce the kind WORD",
+    );
+    expect(() => new Lexer([matcher("A", [one({ named: "vowel" })])])).toThrow(
+      'no set of characters is named "vowel"',
+    );
+    expect(
+      () => new Lexer([matcher("A", [run({ range: ["ab", "c"] })])]),
+    ).toThrow("not a matcher");
+    expect(
+      () => new Lexer([matcher("A", [not([])]), matcher("A", [text("x")])]),
+    ).toThrow("two matchers produce the kind A");
+  });
+});

@@ -31,14 +31,22 @@
 #![deny(clippy::all)]
 #![warn(missing_docs)]
 
+#[cfg(feature = "napi")]
+mod bindings;
 pub mod chars;
 mod cursor;
+// Without a binding nothing calls it, and it is built for its tests.
+#[cfg(feature = "describe")]
+#[cfg_attr(not(any(feature = "napi", feature = "wasm")), allow(dead_code))]
+mod describe;
 mod lexer;
 mod matcher;
 pub mod matchers;
 pub mod pattern;
 mod shortcuts;
 mod trie;
+#[cfg(feature = "wasm")]
+mod wasm;
 // Generated: its layout is the generator's.
 #[rustfmt::skip]
 mod unicode_tables;

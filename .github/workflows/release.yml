@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    name: tag matches package versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          root=$(node -p "require('./package.json').version")
+          rust=$(sed -n 's/^version = "\([^"]*\)"/\1/p' rust/Cargo.toml | head -1)
+          if [ "$tag" != "$root" ] || [ "$tag" != "$rust" ]; then
+            echo "Tag v$tag, package.json $root, rust/Cargo.toml $rust must match" >&2
+            exit 1
+          fi
+          for manifest in npm/*/package.json; do
+            published=$(node -p "require('./$manifest').version")
+            if [ "$published" != "$tag" ]; then
+              echo "$manifest version $published does not match tag v$tag" >&2
+              exit 1
+            fi
+          done
+          for platform in $(node -p "Object.entries(require('./package.json').optionalDependencies).filter(([, version]) => version !== '$tag').map(([name]) => name).join(' ')"); do
+            echo "package.json asks for $platform at another version than v$tag" >&2
+            exit 1
+          done
+
+  verify:
+    name: verify source
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      # Must match the wasm-bindgen version pinned in rust/Cargo.toml.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.127
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> rust/target
+      - run: tools/verify.sh
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: check-version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            musl: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            musl: true
+            # Rust 1.98+ passes --fix-cortex-a53-843419 when linking for
+            # aarch64 Linux, and no Zig release accepts that flag, so the
+            # zig-linked musl build stays on the last toolchain that omits
+            # it. Drop the pin once Zig links with the flag.
+            toolchain: 1.97.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain || 'stable' }}
+          targets: ${{ matrix.target }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> rust/target
+          key: ${{ matrix.target }}
+      - uses: mlugg/setup-zig@v2
+        if: matrix.musl
+        with:
+          version: 0.13.0
+      - run: bun install --frozen-lockfile
+      - name: Build native addon
+        run: >-
+          bunx napi build --release --strip --platform
+          --target ${{ matrix.target }}
+          --features napi --cargo-flags=--no-default-features
+          --cargo-cwd rust
+          ${{ matrix.musl && '--zig' || '' }}
+      # A musl addon is cross-linked here but only ever loaded by musl's
+      # dynamic loader, which refuses things glibc accepts. Load it on
+      # Alpine and lex a text, so a broken addon fails the release instead
+      # of reaching npm.
+      - name: Load the addon on Alpine
+        if: matrix.musl
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w public.ecr.aws/docker/library/node:22-alpine node -e '
+            const addon = require("fs").readdirSync(".").find((f) => f.endsWith(".node"));
+            const { Lexer } = require("./" + addon);
+            const lexer = new Lexer("[]");
+            const { kinds, ends } = lexer.tokens("on Alpine");
+            if (lexer.kinds()[kinds[0]] !== "WORD" || ends.join() !== "2,3,9") throw new Error("unexpected tokens: " + ends);
+            console.log(addon, "loads and lexes on Alpine");
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.target }}
+          path: "*.node"
+          if-no-files-found: error
+
+  build-wasm:
+    name: build wasm32
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # Must match the wasm-bindgen version pinned in rust/Cargo.toml.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.127
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> rust/target
+          key: wasm32-unknown-unknown
+      - run: bun install --frozen-lockfile
+      - run: npm run build:wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: |
+            npm/wasm/*.js
+            npm/wasm/*.d.ts
+            npm/wasm/*.wasm
+          if-no-files-found: error
+
+  publish:
+    name: publish npm packages
+    needs: [verify, build, build-wasm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bindings-*
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: npm/wasm
+      - name: Move binaries into platform packages
+        run: bunx napi artifacts -d artifacts
+      - name: Determine npm tag
+        id: npm-tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$version" == *-* ]]; then
+            prerelease="${version#*-}"
+            echo "tag=${prerelease%%.*}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+      # Nothing depends on the wasm package, so it goes first: if npm
+      # refuses it, no other package is published and the job can be rerun.
+      - name: Publish @shiftlabs/tolkien-wasm
+        run: npm publish ./npm/wasm --tag ${{ steps.npm-tag.outputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish platform packages and @shiftlabs/tolkien
+        run: npm publish --tag ${{ steps.npm-tag.outputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  github-release:
+    name: create GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

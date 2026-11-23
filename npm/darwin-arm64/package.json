@@ -1,0 +1,23 @@
+{
+  "name": "@shiftlabs/tolkien-darwin-arm64",
+  "version": "0.1.0",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "tolkien.darwin-arm64.node",
+  "files": [
+    "tolkien.darwin-arm64.node"
+  ],
+  "description": "Native Rust binary for @shiftlabs/tolkien",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shift-labs-ai/tolkien.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@shiftlabs/tolkien-wasm",
+  "version": "0.1.0",
+  "description": "WebAssembly build of the tolkien lexer, for browsers",
+  "type": "module",
+  "main": "wasm.js",
+  "types": "wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./wasm.d.ts",
+      "default": "./wasm.js"
+    },
+    "./engine_bg.wasm": "./engine_bg.wasm"
+  },
+  "files": [
+    "README.md",
+    "wasm.js",
+    "wasm.d.ts",
+    "lexer.js",
+    "lexer.d.ts",
+    "describe.js",
+    "describe.d.ts",
+    "engine.js",
+    "engine.d.ts",
+    "engine_bg.wasm",
+    "engine_bg.wasm.d.ts"
+  ],
+  "sideEffects": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shift-labs-ai/tolkien.git"
+  },
+  "homepage": "https://github.com/shift-labs-ai/tolkien#browser-webassembly",
+  "bugs": {
+    "url": "https://github.com/shift-labs-ai/tolkien/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

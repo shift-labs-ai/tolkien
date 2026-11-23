@@ -2,3 +2,16 @@ rust/target/
 tools/.ucd/
 __pycache__/
 corpus/
+
+# The Node package
+node_modules/
+dist/
+*.tsbuildinfo
+*.node
+# What `napi build` writes beside the addon; src/index.ts is the API.
+/index.js
+/index.d.ts
+# The output of build:wasm; the rest of npm/wasm/ is committed.
+/npm/wasm/*.js
+/npm/wasm/*.d.ts
+/npm/wasm/*.wasm

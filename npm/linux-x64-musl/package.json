@@ -1,0 +1,26 @@
+{
+  "name": "@shiftlabs/tolkien-linux-x64-musl",
+  "version": "0.1.0",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "tolkien.linux-x64-musl.node",
+  "files": [
+    "tolkien.linux-x64-musl.node"
+  ],
+  "description": "Native Rust binary for @shiftlabs/tolkien",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shift-labs-ai/tolkien.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "libc": [
+    "musl"
+  ]
+}

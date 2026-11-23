@@ -30,7 +30,8 @@ TIME         39..46 "8:05 PM"
 ```
 
 tolkien is a Rust rewrite of [fastlex](https://github.com/Michaelliv/fastlex),
-a Kotlin library. It has no dependencies and builds for `wasm32`.
+a Kotlin library. The crate has no dependencies. It is also an npm package
+for [Node and for browsers](#from-javascript).
 
 ## How it works
 
@@ -275,6 +276,78 @@ IP address, a MAC address and a list of keywords.
 
 `Lexer::new` takes any list of matchers and nothing else: no built-in
 matcher is added, and each matcher is asked for every token it can start.
+
+## From JavaScript
+
+The same lexer runs in Node, as a native addon, and in a browser, as
+WebAssembly. Both packages have one API.
+
+```bash
+npm install @shiftlabs/tolkien        # Node 20.19 or later; macOS and Linux
+npm install @shiftlabs/tolkien-wasm   # browsers
+```
+
+```ts
+import { Lexer } from "@shiftlabs/tolkien";
+
+const lexer = new Lexer();
+for (const token of lexer.tokens("Dana paid $1,250.50 on Feb 17, 2009")) {
+  console.log(token.kind, token.start, token.end, token.text);
+}
+```
+
+`start` and `end` are indexes into the string, so
+`text.slice(token.start, token.end)` is the token.
+
+A matcher of your own is described with the same steps as a
+[pattern](#your-own-matcher) in Rust, and runs in Rust: nothing of yours is
+called while a text is lexed.
+
+```ts
+import {
+  Lexer, matcher, run, one, repeat, not, chars, range, letter, digit,
+} from "@shiftlabs/tolkien";
+
+const asciiDigit = range("0", "9");
+
+// 13 to 19 digits in at most eight groups joined by a space or a dash.
+const cardNumber = matcher(
+  "CARD_NUMBER",
+  [
+    run(asciiDigit),
+    repeat(7, [one(chars(" -")), run(asciiDigit)]),
+    not([letter, digit]),
+  ],
+  { count: { of: asciiDigit, min: 13, max: 19 } },
+);
+
+const lexer = new Lexer([cardNumber]);
+const cards = lexer.tokens(text).ofKind("CARD_NUMBER");
+```
+
+A rule over the whole token, such as a checksum, is a check of your own on
+the tokens that come back: `cards.filter((card) => luhn(card.text))`.
+
+The tokens of a text are kept as two arrays of numbers. Going through them
+with `for...of` makes an object for each; on a long text,
+`tokens.kind(i)`, `tokens.start(i)`, `tokens.end(i)` and `tokens.text(i)`
+read one without making anything.
+
+Through the addon the texts of the [speed table](#speed) lex at 220 to
+510 MB/s, tokens included. A long text is lexed on every core.
+
+### Browser (WebAssembly)
+
+```ts
+import init, { Lexer } from "@shiftlabs/tolkien-wasm";
+
+await init(); // loads the engine, once
+const tokens = new Lexer().tokens("Mail dana@acme.com by 2026-11-23");
+```
+
+`init` fetches `engine_bg.wasm` from beside the module; pass a URL, a
+`Response` or the bytes when a bundler or a server puts it elsewhere. A text
+is lexed on the calling thread, so lex a long one in a Web Worker.
 
 ## Command line
 

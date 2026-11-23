@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "outDir": "npm/wasm",
+    "rootDirs": [
+      "src",
+      "npm/wasm"
+    ]
+  },
+  "include": [
+    "src/wasm.ts"
+  ],
+  "exclude": []
+}

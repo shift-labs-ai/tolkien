@@ -7,6 +7,40 @@ description = "A fast lexer for natural text: one pass turns text into typed tok
 # Internal for now: the name is not cleared for a public release.
 publish = false
 
+# The library needs none of these: each is behind a feature that only a
+# binding turns on.
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi8"], optional = true }
+napi-derive = { version = "2", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+# Must match the wasm-bindgen-cli version that build:wasm runs (CI pins it).
+wasm-bindgen = { version = "=0.2.127", optional = true }
+
+[build-dependencies]
+napi-build = { version = "2", optional = true }
+
+[features]
+default = ["cli"]
+# The command line binary. Deselected by npm's build:native (napi symbols
+# only resolve inside a Node process, so the bin cannot link with "napi").
+cli = []
+# Matchers described as JSON and tokens as arrays: what the two bindings
+# share. It links anywhere, so its tests run with `cargo test`.
+describe = ["dep:serde", "dep:serde_json"]
+# The Node addon. Built by npm's build:native.
+napi = ["describe", "dep:napi", "dep:napi-derive", "dep:napi-build"]
+# The browser API. Built by npm's build:wasm for wasm32.
+wasm = ["describe", "dep:wasm-bindgen"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "tolkien"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [profile.release]
 codegen-units = 1
 lto = "fat"
