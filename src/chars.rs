@@ -127,7 +127,9 @@ pub fn is_exclamation_mark(c: char) -> bool {
     in_set(tables::EXCLAMATION_MARK, c)
 }
 
-/// An apostrophe that can stand inside a word, the typographic one included.
+/// A punctuation apostrophe that can stand inside a word, the typographic
+/// one included. The modifier-letter apostrophes, such as U+02BC, are
+/// [letters](is_letter).
 pub fn is_apostrophe(c: char) -> bool {
     in_set(tables::APOSTROPHE, c)
 }
@@ -176,37 +178,11 @@ pub fn is_word_termination(c: char) -> bool {
 mod tests {
     use super::*;
 
-    const RANGE_TABLES: &[(&str, &[(u32, u32)])] = &[
-        ("LETTER", tables::LETTER),
-        ("DECIMAL_DIGIT", tables::DECIMAL_DIGIT),
-        ("NUMBER", tables::NUMBER),
-        ("MATH_SYMBOL", tables::MATH_SYMBOL),
-        ("DASH_PUNCTUATION", tables::DASH_PUNCTUATION),
-        ("CONNECTOR_PUNCTUATION", tables::CONNECTOR_PUNCTUATION),
-        ("CURRENCY_SYMBOL", tables::CURRENCY_SYMBOL),
-        ("WHITE_SPACE", tables::WHITE_SPACE),
-    ];
-
-    const NAMED_SETS: &[(&str, &[char])] = &[
-        ("FULL_STOP", tables::FULL_STOP),
-        ("COMMA", tables::COMMA),
-        ("COLON", tables::COLON),
-        ("QUESTION_MARK", tables::QUESTION_MARK),
-        ("EXCLAMATION_MARK", tables::EXCLAMATION_MARK),
-        ("APOSTROPHE", tables::APOSTROPHE),
-        ("DASH", tables::DASH),
-        ("UNDERSCORE", tables::UNDERSCORE),
-        ("SLASH", tables::SLASH),
-        ("PERCENT_SIGN", tables::PERCENT_SIGN),
-        ("NUMBER_SIGN", tables::NUMBER_SIGN),
-        ("LINE_TERMINATION", tables::LINE_TERMINATION),
-    ];
-
     /// The lookups are binary searches, so an unsorted table would answer
     /// wrongly without failing.
     #[test]
     fn generated_tables_are_sorted_and_not_empty() {
-        for (name, table) in RANGE_TABLES {
+        for (name, table) in tables::RANGE_TABLES {
             assert!(!table.is_empty(), "{name} is empty");
             assert!(
                 table.iter().all(|(first, last)| first <= last),
@@ -217,7 +193,7 @@ mod tests {
                 "{name} is not sorted"
             );
         }
-        for (name, set) in NAMED_SETS {
+        for (name, set) in tables::NAMED_SETS {
             assert!(!set.is_empty(), "{name} is empty");
             assert!(set.windows(2).all(|w| w[0] < w[1]), "{name} is not sorted");
         }
@@ -263,9 +239,16 @@ mod tests {
         assert!(is_full_stop('.') && is_full_stop('。') && is_full_stop('．'));
         assert!(is_comma(',') && is_comma('،') && is_comma('、'));
         assert!(is_colon(':') && is_colon('：') && !is_colon(';'));
-        assert!(is_question_mark('?') && is_question_mark('¿'));
-        assert!(is_exclamation_mark('!') && is_exclamation_mark('¡'));
+        assert!(is_question_mark('?') && is_question_mark('¿') && !is_question_mark('!'));
+        assert!(is_exclamation_mark('!') && is_exclamation_mark('¡') && !is_exclamation_mark('?'));
+        for both in ['‽', '⁈', '⁉'] {
+            assert!(
+                is_question_mark(both) && is_exclamation_mark(both),
+                "{both}"
+            );
+        }
         assert!(is_apostrophe('\'') && is_apostrophe('’') && !is_apostrophe('»'));
+        assert!(!is_apostrophe('ʼ') && is_letter('ʼ'));
         assert!(is_dash('-') && is_dash('—') && is_dash('−') && !is_dash('~'));
         assert!(is_underscore('_') && is_underscore('＿'));
         assert!(is_slash('/') && is_slash('\\') && is_slash('⁄'));

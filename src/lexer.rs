@@ -3,8 +3,7 @@
 use std::fmt;
 use std::iter::FusedIterator;
 
-use crate::cursor::Cursor;
-use crate::matcher::Matcher;
+use crate::matcher::{match_at, Matcher};
 use crate::matchers;
 
 /// The kind of a character no matcher claimed.
@@ -30,7 +29,8 @@ pub enum Error {
     NoMatchers,
     /// Two matchers produce the same kind.
     DuplicateKind(&'static str),
-    /// These matchers override each other in a circle, so no order exists.
+    /// These matchers override each other in a circle: each one overrides
+    /// the next and the last one overrides the first, so no order exists.
     OverrideCycle(Vec<&'static str>),
 }
 
@@ -43,7 +43,7 @@ impl fmt::Display for Error {
                 write!(
                     f,
                     "matchers override each other in a circle: {}",
-                    kinds.join(", ")
+                    kinds.join(" > ")
                 )
             }
         }
@@ -155,16 +155,39 @@ fn order(matchers: Vec<Box<dyn Matcher>>) -> Result<Vec<Box<dyn Matcher>>, Error
         });
         match next {
             Some(i) => ordered.extend(waiting[i].take()),
-            None => {
-                let kinds = waiting.iter().flatten().map(|m| m.kind()).collect();
-                return Err(Error::OverrideCycle(kinds));
-            }
+            None => return Err(Error::OverrideCycle(cycle(waiting.iter().flatten()))),
         }
     }
     Ok(ordered)
 }
 
+/// One circle of overrides among `stuck`, a set of matchers in which every
+/// one is overridden by another of the set.
+fn cycle<'m>(stuck: impl Iterator<Item = &'m Box<dyn Matcher>>) -> Vec<&'static str> {
+    let stuck: Vec<_> = stuck.collect();
+    // Walking from any matcher to one that overrides it must come back to a
+    // matcher already on the path, and the path from there on is a circle.
+    let mut path = vec![stuck[0].kind()];
+    loop {
+        let last = path[path.len() - 1];
+        let overrider = stuck
+            .iter()
+            .find(|m| m.overrides().contains(&last))
+            .expect("every stuck matcher is overridden by another")
+            .kind();
+        if let Some(first) = path.iter().position(|kind| *kind == overrider) {
+            // The walk went from overridden to overrider; reverse it so that
+            // each matcher overrides the next.
+            let mut circle = path.split_off(first);
+            circle.reverse();
+            return circle;
+        }
+        path.push(overrider);
+    }
+}
+
 /// The tokens of one text. Created by [`Lexer::tokens`].
+#[derive(Debug, Clone)]
 pub struct Tokens<'l, 't> {
     lexer: &'l Lexer,
     text: &'t str,
@@ -182,10 +205,8 @@ impl<'t> Iterator for Tokens<'_, 't> {
             .matchers
             .iter()
             .find_map(|matcher| {
-                let mut cur = Cursor::at(self.text, start);
-                // A match that consumed nothing would never move the lexer on.
-                (matcher.matches(&mut cur) && cur.pos() > start)
-                    .then(|| (matcher.kind(), cur.pos()))
+                let end = match_at(matcher.as_ref(), self.text, start)?;
+                Some((matcher.kind(), end))
             })
             .unwrap_or((OTHER, start + first.len_utf8()));
         self.pos = end;

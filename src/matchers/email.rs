@@ -13,9 +13,14 @@ pub const LIKE_EMAIL: &str = "LIKE_EMAIL";
 /// 5322. The local part is ASCII letters, digits and `_ - . +`; the domain is
 /// ASCII letters, digits and `-`; the part after its first dot is ASCII
 /// letters, digits, `-` and `.`. Each part needs at least one letter or
-/// digit. A dot or dash at the very end is left out, so an address that ends
-/// a sentence does not take the full stop with it.
+/// digit, and the local part has at most 64 characters. A dot or dash at the
+/// very end is left out, so an address that ends a sentence does not take the
+/// full stop with it.
 pub struct LikeEmail;
+
+/// The longest local part RFC 5321 allows. The limit also bounds the work on
+/// a long run of local-part characters that holds no `@`.
+const MAX_LOCAL_PART: usize = 64;
 
 fn is_local_symbol(c: char) -> bool {
     matches!(c, '_' | '-' | '.' | '+')
@@ -39,7 +44,14 @@ impl Matcher for LikeEmail {
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
-        let (_, local) = cur.advance_while2(is_local_symbol, is_ascii_letter_or_digit);
+        let mut local = 0;
+        for _ in 0..MAX_LOCAL_PART {
+            if cur.advance_if(is_ascii_letter_or_digit) {
+                local += 1;
+            } else if !cur.advance_if(is_local_symbol) {
+                break;
+            }
+        }
         if local == 0 || !cur.advance_if(|c| c == '@') {
             return false;
         }
@@ -51,9 +63,7 @@ impl Matcher for LikeEmail {
         if tld == 0 {
             return false;
         }
-        while cur.prev().is_some_and(is_tld_symbol) {
-            cur.back();
-        }
+        cur.back_while(is_tld_symbol);
         true
     }
 }
@@ -98,6 +108,14 @@ mod tests {
             LikeEmail.match_prefix("dana@acme.com..."),
             Some("dana@acme.com")
         );
+    }
+
+    #[test]
+    fn local_part_has_at_most_64_characters() {
+        let longest = format!("{}@example.com", "a".repeat(64));
+        assert_eq!(LikeEmail.match_prefix(&longest), Some(longest.as_str()));
+        let too_long = format!("{}@example.com", "a".repeat(65));
+        assert_eq!(LikeEmail.match_prefix(&too_long), None);
     }
 
     #[test]

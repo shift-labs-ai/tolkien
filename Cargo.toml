@@ -7,13 +7,6 @@ description = "A fast lexer for natural text: one pass turns text into typed tok
 # Internal for now: the name is not cleared for a public release.
 publish = false
 
-[lib]
-path = "src/lib.rs"
-
-[[bin]]
-name = "tolkien"
-path = "src/main.rs"
-
 [profile.release]
 codegen-units = 1
 lto = "fat"

@@ -7,17 +7,17 @@ Kotlin library `Michaelliv/fastlex`. Internal: `publish = false`.
 ## Commands
 
 ```bash
+tools/verify.sh                                    # every check, before a commit
 cargo test                                         # unit, integration and doc tests
-cargo fmt --check                                  # formatting
-cargo clippy --all-targets -- -D warnings          # lints
-cargo build --lib --target wasm32-unknown-unknown  # the library must build for wasm32
 python3 tools/gen_unicode.py                       # regenerate the character tables
-python3 tools/gen_unicode.py --check               # fail if they are stale
 cargo run -- "some text"                           # print tokens
 cargo run --release --example throughput -- FILE   # measure speed
 ```
 
-Run all of the first five before a commit. CI runs the same.
+`tools/verify.sh` runs rustfmt, clippy with `-D warnings`, the tests, the
+`wasm32-unknown-unknown` build of the library and the stale check of the
+generated tables. CI runs that script and nothing else, so a check is added
+there.
 
 ## Architecture
 
@@ -34,6 +34,8 @@ Run all of the first five before a commit. CI runs the same.
 - `docs/charsets.md`: generated listing of every named set, for review
 - `src/main.rs`: the `tolkien` command
 - `tests/lexer.rs`: tests of the lexer as a whole
+- `tests/cli.rs`: tests of the command
+- `tools/verify.sh`: every check, for CI and for a person
 
 ## Key patterns
 
@@ -44,6 +46,15 @@ Run all of the first five before a commit. CI runs the same.
 - **Matcher contract.** `matches` returns `true` with the cursor just past
   the token, or `false` with the cursor anywhere. The lexer gives each
   matcher a fresh cursor and ignores a match of length zero.
+- **Linear time.** A matcher that reads a long run and then fails is asked
+  again at the next character, which makes lexing that run quadratic. A
+  matcher must fail within a bounded number of characters, or fail only on
+  text that some matcher then takes as one token. The email matcher bounds
+  its local part and the number matcher its leading punctuation for this
+  reason. `long_runs_are_lexed_in_linear_time` in `tests/lexer.rs` guards it;
+  add the new matcher's worst run there.
+- **Leaving out trailing punctuation.** A matcher whose run can end in
+  sentence punctuation steps back over it with `Cursor::back_while`.
 - **Order.** A matcher is tried before the kinds in its `overrides`. Other
   matchers keep the order of `matchers::all()`, most specific first. Adding
   a matcher means choosing its place there.
@@ -63,6 +74,7 @@ Run all of the first five before a commit. CI runs the same.
    match ends inside longer text.
 3. Export it from `src/matchers/mod.rs` and add it to `all()` in the right
    place.
-4. Add a sample to `default_lexer_names_the_parts_of_a_sentence` and to the
-   random-text alphabet in `tests/lexer.rs`.
+4. In `tests/lexer.rs`, add a sample to
+   `default_lexer_names_the_parts_of_a_sentence`, to the random-text alphabet
+   and to the long runs.
 5. Add a row to the matcher table in the README.

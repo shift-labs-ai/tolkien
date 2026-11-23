@@ -47,11 +47,22 @@ pub trait Matcher: Send + Sync {
 
     /// The token at the start of `text`, if `text` starts with one.
     fn match_prefix<'t>(&self, text: &'t str) -> Option<&'t str> {
-        let mut cur = Cursor::new(text);
-        if self.matches(&mut cur) && cur.pos() > 0 {
-            Some(&text[..cur.pos()])
-        } else {
-            None
-        }
+        match_at(self, text, 0).map(|end| &text[..end])
     }
+}
+
+/// The end of the token that starts at byte offset `start` of `text`, if
+/// `matcher` finds one. A match that consumed nothing is not a token: it
+/// would never move a lexer on.
+///
+/// This is a function and not a method of the trait so that the lexer's loop
+/// makes one dynamic call per attempt, to [`Matcher::matches`].
+#[inline]
+pub(crate) fn match_at<M: Matcher + ?Sized>(
+    matcher: &M,
+    text: &str,
+    start: usize,
+) -> Option<usize> {
+    let mut cur = Cursor::at(text, start);
+    (matcher.matches(&mut cur) && cur.pos() > start).then(|| cur.pos())
 }

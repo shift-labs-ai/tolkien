@@ -334,7 +334,7 @@ pub(crate) const COLON: &[char] = &[
     '\u{1DA8A}', // SIGNWRITING COLON
 ];
 
-/// Question marks, including the ornament forms. Sorted.
+/// Question marks, including the ornament forms and the marks that combine a question with an exclamation. Sorted.
 #[rustfmt::skip]
 pub(crate) const QUESTION_MARK: &[char] = &[
     '\u{003F}', // QUESTION MARK
@@ -344,12 +344,15 @@ pub(crate) const QUESTION_MARK: &[char] = &[
     '\u{061F}', // ARABIC QUESTION MARK
     '\u{1367}', // ETHIOPIC QUESTION MARK
     '\u{1945}', // LIMBU QUESTION MARK
+    '\u{203D}', // INTERROBANG
     '\u{2047}', // DOUBLE QUESTION MARK
+    '\u{2048}', // QUESTION EXCLAMATION MARK
     '\u{2049}', // EXCLAMATION QUESTION MARK
     '\u{2753}', // BLACK QUESTION MARK ORNAMENT
     '\u{2754}', // WHITE QUESTION MARK ORNAMENT
     '\u{2CFA}', // COPTIC OLD NUBIAN DIRECT QUESTION MARK
     '\u{2CFB}', // COPTIC OLD NUBIAN INDIRECT QUESTION MARK
+    '\u{2E18}', // INVERTED INTERROBANG
     '\u{2E2E}', // REVERSED QUESTION MARK
     '\u{2E54}', // MEDIEVAL QUESTION MARK
     '\u{A60F}', // VAI QUESTION MARK
@@ -362,7 +365,7 @@ pub(crate) const QUESTION_MARK: &[char] = &[
     '\u{1FBC4}', // NEGATIVE SQUARED QUESTION MARK
 ];
 
-/// Exclamation marks, including the ornament forms. Sorted.
+/// Exclamation marks, including the ornament forms and the marks that combine an exclamation with a question. Sorted.
 #[rustfmt::skip]
 pub(crate) const EXCLAMATION_MARK: &[char] = &[
     '\u{0021}', // EXCLAMATION MARK
@@ -371,11 +374,14 @@ pub(crate) const EXCLAMATION_MARK: &[char] = &[
     '\u{07F9}', // NKO EXCLAMATION MARK
     '\u{1944}', // LIMBU EXCLAMATION MARK
     '\u{203C}', // DOUBLE EXCLAMATION MARK
+    '\u{203D}', // INTERROBANG
     '\u{2048}', // QUESTION EXCLAMATION MARK
+    '\u{2049}', // EXCLAMATION QUESTION MARK
     '\u{2755}', // WHITE EXCLAMATION MARK ORNAMENT
     '\u{2757}', // HEAVY EXCLAMATION MARK SYMBOL
     '\u{2762}', // HEAVY EXCLAMATION MARK ORNAMENT
     '\u{2763}', // HEAVY HEART EXCLAMATION MARK ORNAMENT
+    '\u{2E18}', // INVERTED INTERROBANG
     '\u{2E53}', // MEDIEVAL EXCLAMATION MARK
     '\u{2E60}', // WIGGLY EXCLAMATION MARK
     '\u{2E61}', // INVERTED WIGGLY EXCLAMATION MARK
@@ -385,15 +391,11 @@ pub(crate) const EXCLAMATION_MARK: &[char] = &[
     '\u{1E95E}', // ADLAM INITIAL EXCLAMATION MARK
 ];
 
-/// Apostrophes that can stand inside a word. Sorted.
+/// Punctuation apostrophes that can stand inside a word. The modifier-letter apostrophes are letters. Sorted.
 #[rustfmt::skip]
 pub(crate) const APOSTROPHE: &[char] = &[
     '\u{0027}', // APOSTROPHE
-    '\u{02BC}', // MODIFIER LETTER APOSTROPHE
-    '\u{02EE}', // MODIFIER LETTER DOUBLE APOSTROPHE
     '\u{055A}', // ARMENIAN APOSTROPHE
-    '\u{07F4}', // NKO HIGH TONE APOSTROPHE
-    '\u{07F5}', // NKO LOW TONE APOSTROPHE
     '\u{2019}', // RIGHT SINGLE QUOTATION MARK
     '\u{FF07}', // FULLWIDTH APOSTROPHE
 ];
@@ -488,4 +490,34 @@ pub(crate) const LINE_TERMINATION: &[char] = &[
     '\u{0085}', // <control-0085>
     '\u{2028}', // LINE SEPARATOR
     '\u{2029}', // PARAGRAPH SEPARATOR
+];
+
+/// Every table of this kind with its name, for the tests.
+#[cfg(test)]
+pub(crate) const RANGE_TABLES: &[(&str, &[(u32, u32)])] = &[
+    ("LETTER", LETTER),
+    ("DECIMAL_DIGIT", DECIMAL_DIGIT),
+    ("NUMBER", NUMBER),
+    ("MATH_SYMBOL", MATH_SYMBOL),
+    ("DASH_PUNCTUATION", DASH_PUNCTUATION),
+    ("CONNECTOR_PUNCTUATION", CONNECTOR_PUNCTUATION),
+    ("CURRENCY_SYMBOL", CURRENCY_SYMBOL),
+    ("WHITE_SPACE", WHITE_SPACE),
+];
+
+/// Every table of this kind with its name, for the tests.
+#[cfg(test)]
+pub(crate) const NAMED_SETS: &[(&str, &[char])] = &[
+    ("FULL_STOP", FULL_STOP),
+    ("COMMA", COMMA),
+    ("COLON", COLON),
+    ("QUESTION_MARK", QUESTION_MARK),
+    ("EXCLAMATION_MARK", EXCLAMATION_MARK),
+    ("APOSTROPHE", APOSTROPHE),
+    ("DASH", DASH),
+    ("UNDERSCORE", UNDERSCORE),
+    ("SLASH", SLASH),
+    ("PERCENT_SIGN", PERCENT_SIGN),
+    ("NUMBER_SIGN", NUMBER_SIGN),
+    ("LINE_TERMINATION", LINE_TERMINATION),
 ];

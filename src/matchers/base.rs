@@ -155,7 +155,11 @@ mod tests {
         assert_eq!(LineTermination.match_prefix("\n  \t\n"), Some("\n"));
         assert_eq!(LineTermination.match_prefix("\n\n\n  \t\n"), Some("\n\n\n"));
         assert_eq!(LineTermination.match_prefix("\r\nx"), Some("\r\n"));
-        // The letters v and f are not line breaks (they were in fastlex).
+        assert_eq!(
+            LineTermination.match_prefix("\u{b}\u{c}x"),
+            Some("\u{b}\u{c}")
+        );
+        // The letters v and f are not the controls \v and \f.
         assert_eq!(LineTermination.match_prefix("v"), None);
         assert_eq!(LineTermination.match_prefix("f"), None);
     }

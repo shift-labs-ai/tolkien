@@ -11,11 +11,13 @@ pub const TIME: &str = "TIME";
 /// A time of day: `H:MM` or `HH:MM`, then optional `:SS`, then an optional
 /// AM/PM marker: `7:20`, `04:01:30`, `8:05 PM`, `04:01am`, `4:01 a.m.`
 ///
-/// The hour is 0 to 24 and the minutes 00 to 59. Digits are ASCII.
+/// The hour is 0 to 24, and the minutes and seconds are 00 to 59. Digits are
+/// ASCII.
 pub struct Time;
 
-fn is_ascii_digit(c: char) -> bool {
-    c.is_ascii_digit()
+/// Two digits from 00 to 59.
+fn sixty(cur: &mut Cursor<'_>) -> bool {
+    cur.advance_if(|c| matches!(c, '0'..='5')) && cur.advance_if(|c| c.is_ascii_digit())
 }
 
 impl Matcher for Time {
@@ -42,17 +44,13 @@ impl Matcher for Time {
             _ => {}
         }
         // :MM
-        if !cur.advance_if(|c| c == ':')
-            || !cur.advance_if(|c| matches!(c, '0'..='5'))
-            || !cur.advance_if(is_ascii_digit)
-        {
+        if !(cur.advance_if(|c| c == ':') && sixty(cur)) {
             return false;
         }
         // :SS, or a colon that belongs to what follows
         let after_minutes = cur.pos();
-        if cur.advance_if(|c| c == ':') && cur.advance_while(is_ascii_digit) == 0 {
+        if !(cur.advance_if(|c| c == ':') && sixty(cur)) {
             cur.set_pos(after_minutes);
-            return true;
         }
         // AM, PM, a.m., p.m., with or without a space before
         let after_time = cur.pos();
@@ -96,6 +94,10 @@ mod tests {
             ("04:01 p.m.", "04:01 p.m."),
             ("04:01 p.m", "04:01 p.m"),
             ("23:59:59 UTC", "23:59:59"),
+            ("23:59:60", "23:59"),
+            ("10:30:5", "10:30"),
+            ("10:30:15pm", "10:30:15pm"),
+            ("7:20: PM", "7:20"),
             ("24:00", "24:00"),
         ] {
             assert_eq!(Time.match_prefix(text), Some(expected), "{text:?}");

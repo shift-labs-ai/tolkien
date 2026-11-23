@@ -44,6 +44,8 @@ a Kotlin library. It has no dependencies and builds for `wasm32`.
   tried first.
 - **Full coverage.** Every byte of the text belongs to exactly one token. A
   character no matcher claims becomes a one-character `OTHER` token.
+- **Linear time.** No built-in matcher reads far ahead and then gives up, so
+  the time to lex a text grows with its length, whatever the text holds.
 
 Offsets are byte offsets into the UTF-8 text.
 
@@ -61,22 +63,32 @@ Offsets are byte offsets into the UTF-8 text.
 | `CURRENCY` | Currency symbols with an amount, or an amount with a currency name or code | `$5`, `€1,000.50`, `5 USD`, `5.4 Dollars` |
 | `HASHTAG` | `#` and letters, digits, underscores | `#hash_tag` |
 | `MENTION` | `@` and letters, digits, underscores | `@dana` |
-| `WORD` | Letters, with dashes and one apostrophe inside | `word`, `first-second`, `don't` |
+| `WORD` | A letter, then letters, dashes and at most one apostrophe | `word`, `first-second`, `don't` |
 | `ALPHA_NUMERIC_SEQUENCE` | Letters mixed with digits, dashes, underscores | `armV7`, `some_word` |
 | `LIKE_NUMBER` | Number characters and the punctuation written with them | `-0.5`, `1,000`, `100%`, `6.0.1` |
 | `LINE_TERMINATION` | A run of line breaks | |
-| `DIGIT`, `LETTER`, `WHITE_SPACE` | A run of one character class | |
-| `SYMBOL` | One character that is none of the above | `(` |
+| `DIGIT` | A run of digits | |
+| `LETTER` | A run of letters | |
+| `SYMBOL` | One character that is not a letter, a digit or white space | `(` |
+| `WHITE_SPACE` | A run of white space | |
+
+With the default lexer `DIGIT` and `LETTER` never appear: `LIKE_NUMBER`,
+`WORD` and `ALPHA_NUMERIC_SEQUENCE` are tried first and take every run they
+would.
 
 The matchers check shape, not meaning. `99/99/9999` is a `DATE`.
 
-Known weak spots, all taken over from fastlex:
+Known weak spots:
 
 - A version number with three parts is a `DATE`: `1.2.3`.
 - A package reference is a `LIKE_EMAIL`: `liteparse@2.12.0`.
 - A URL takes a closing bracket that follows it: `(https://example.com)`.
-- Short currency abbreviations collide with units: `5 km`, `5 ft`.
+- Short currency abbreviations collide with units and common words: `5 km`,
+  `5 ft`, `5 all`, `5 try`.
 - A number keeps the punctuation after it: `1.` at the end of a sentence.
+- An ISO date takes a two-digit number after a space as its hour:
+  `2022-01-06 12 apples`.
+- A word keeps a dash or an apostrophe at its end: `word-`, `dogs'`.
 
 ## Your own matcher
 
@@ -128,8 +140,9 @@ pattern over character names (`FULL STOP`, `COMMA`, `QUESTION MARK`).
 
 ## Speed
 
-About 57 MB/s and 20 million tokens per second with every built-in matcher,
-on an Apple M5 laptop, over 1.2 MB of English technical prose:
+About 59 MB/s and 21 million tokens per second with every built-in matcher,
+on an Apple M5 laptop, over 1.2 MB of English technical prose. The slowest
+input measured is a long run of one punctuation character, at about 10 MB/s.
 
 ```bash
 cargo run --release --example throughput -- FILE
@@ -150,9 +163,16 @@ The design is the same. These behaviours changed:
 | `LIKE_URL` | Matched any text, because of the prefix bug | Needs `http://`, `https://` or `www.`; allows `%`; leaves out sentence punctuation at the end |
 | `LINE_TERMINATION` | Included the letters `v` and `f` and the backslash | Line-break classes BK, CR, LF, NL |
 | Character sets | Written by hand | Generated from the Unicode data; see the notes below |
-| `LIKE_EMAIL` | Kept a full stop after the address | Leaves it out |
-| `TIME` | Accepted hours 50 to 99; read `10:30 Am` in `10:30 Amsterdam` | Hours 0 to 24; the marker must end where its word ends |
+| `LIKE_EMAIL` | Kept a full stop after the address; any length before the `@` | Leaves the full stop out; at most 64 characters before the `@` |
+| `TIME` | Accepted hours 50 to 99 and any digits as seconds; read `10:30 Am` in `10:30 Amsterdam` | Hours 0 to 24, seconds 00 to 59; the marker must end where its word ends |
 | `TIME`, `DATE_ISO_8601` digits | Any Unicode digit | ASCII digits |
+| `DATE` with a month name | Had to end at white space, a full stop, a comma or a colon, so `(Feb 17, 2009)` was not a date | May end anywhere but before a letter |
+| `WORD` | Could start with a dash or an apostrophe: `--help`, `-word` | Starts with a letter |
+| `ALPHA_NUMERIC_SEQUENCE` | Could start with a dash or an underscore | Starts with a letter or a digit |
+| `LIKE_NUMBER` | Any amount of punctuation before the first digit | At most two punctuation characters before it |
+| `CURRENCY` amounts | Could start with any run of full stops and commas; one trailing full stop or comma dropped after a symbol | Start with a digit or one full stop; all trailing full stops and commas dropped |
+| Currency list | Included the region names Abkhazia and Artsakh | Without them |
+| Time to lex | Quadratic on a long run of dashes, dots or underscores | Linear |
 | `PHONE_NUMBER` | A stub that never matched | Not ported |
 | Matcher options | Character sets passed to the constructor | None yet: the matchers are fixed |
 
@@ -164,7 +184,10 @@ Generating the character sets changed their members:
 - Dashes are the Unicode `Dash` property. The set gains the hyphens of other
   scripts and the two-em and three-em dashes, and loses `~` and the four
   overline characters.
-- The apostrophe set gains `’` (U+2019) and loses `»`.
+- The apostrophe set gains `’` (U+2019) and the Armenian apostrophe, and
+  loses `»`.
+- Question marks and exclamation marks both gain the interrobang `‽` and the
+  double marks `⁈` and `⁉`.
 - Commas lose the middle dot, colons lose `≔` and `≕`, and number signs lose
   the letters ℂ ℊ ℕ ℚ ℝ.
 - Full stops, commas, colons, question marks and exclamation marks gain the

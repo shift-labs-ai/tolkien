@@ -16,16 +16,4 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Format
-        run: cargo fmt --check
-      - name: Lint
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Test
-        run: cargo test
-      # The library has no dependencies and must keep building for the browser.
-      - name: Build for wasm32
-        run: cargo build --lib --target wasm32-unknown-unknown
-      # Downloads the pinned Unicode data files and compares the committed
-      # tables with what the rules produce.
-      - name: Check generated character tables
-        run: python3 tools/gen_unicode.py --check
+      - run: tools/verify.sh

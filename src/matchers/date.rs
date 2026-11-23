@@ -3,9 +3,7 @@
 use std::sync::LazyLock;
 
 use super::BASE;
-use crate::chars::{
-    is_colon, is_comma, is_dash, is_digit, is_full_stop, is_slash, is_underscore, is_whitespace,
-};
+use crate::chars::{is_comma, is_dash, is_digit, is_full_stop, is_letter, is_slash, is_underscore};
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
 use crate::trie::Trie;
@@ -13,42 +11,14 @@ use crate::trie::Trie;
 /// Kind of [`Date`] tokens.
 pub const DATE: &str = "DATE";
 
+#[rustfmt::skip]
 const MONTH_NAMES: &[&str] = &[
-    "Jan",
-    "January",
-    "Feb",
-    "February",
-    "Mar",
-    "March",
-    "Apr",
-    "April",
-    "May",
-    "Jun",
-    "June",
-    "Jul",
-    "July",
-    "Aug",
-    "August",
-    "Sep",
-    "September",
-    "Oct",
-    "October",
-    "Nov",
-    "November",
-    "Dec",
-    "December",
+    "Jan", "January", "Feb", "February", "Mar", "March", "Apr", "April", "May", "Jun", "June",
+    "Jul", "July", "Aug", "August", "Sep", "September", "Oct", "October", "Nov", "November",
+    "Dec", "December",
 ];
 
-/// The month names as written (`Feb`), in lower case and in upper case.
-static MONTHS: LazyLock<Trie> = LazyLock::new(|| {
-    let mut trie = Trie::new();
-    for name in MONTH_NAMES {
-        trie.insert(name);
-        trie.insert(&name.to_lowercase());
-        trie.insert(&name.to_uppercase());
-    }
-    trie
-});
+static MONTHS: LazyLock<Trie> = LazyLock::new(|| Trie::from_words_in_common_cases(MONTH_NAMES));
 
 /// A date with a day, a month and a year, in one of two forms.
 ///
@@ -60,8 +30,7 @@ static MONTHS: LazyLock<Trie> = LazyLock::new(|| {
 /// ```
 ///
 /// With an English month name, full or abbreviated, in any order and with or
-/// without separators. This form must end at white space, a full stop, a
-/// comma, a colon or the end of the text:
+/// without separators. In this form no letter may follow the last number:
 ///
 /// ```text
 /// February 17, 2009   17 Feb, 2009   2009, Feb 17   17Feb2009   Feb172009
@@ -76,78 +45,62 @@ fn is_separator(c: char) -> bool {
     c == ' ' || is_dash(c) || is_full_stop(c) || is_comma(c) || is_underscore(c) || is_slash(c)
 }
 
-fn is_termination(c: char) -> bool {
-    is_whitespace(c) || is_full_stop(c) || is_comma(c) || is_colon(c)
+/// Between one and `limit` digits.
+fn number(cur: &mut Cursor<'_>, limit: usize) -> bool {
+    (1..=limit).contains(&cur.advance_while(is_digit))
 }
 
-fn at_end_or_termination(cur: &Cursor<'_>) -> bool {
-    cur.peek().is_none_or(is_termination)
-}
-
-/// A run of digits. `None` when it is longer than `limit`.
-fn number(cur: &mut Cursor<'_>, limit: usize) -> Option<usize> {
-    let digits = cur.advance_while(is_digit);
-    (digits <= limit).then_some(digits)
+/// The number that ends a date with a month name: digits that no letter
+/// follows, so that `3 May 5pm` is not a date.
+fn last_number(cur: &mut Cursor<'_>) -> bool {
+    cur.advance_while(is_digit) > 0 && !cur.peek().is_some_and(is_letter)
 }
 
 /// A month name and the full stop of an abbreviation, if there is one.
 fn month(cur: &mut Cursor<'_>) -> bool {
-    if MONTHS.advance_longest(cur).is_none() {
-        return false;
+    MONTHS.advance_longest(cur) && {
+        cur.advance_if(|c| c == '.');
+        true
     }
-    cur.advance_if(|c| c == '.');
-    true
 }
 
 fn numeric_date(cur: &mut Cursor<'_>) -> bool {
-    // The length of the first number says where the year is.
-    let (middle, last) = match number(cur, 4) {
-        Some(4) => (1..=2, 1..=2),
-        Some(1 | 2) => (1..=2, 1..=4),
+    // The length of the first number says where the year is: a year first
+    // leaves two digits for the last number, a day or month first leaves four.
+    let last = match cur.advance_while(is_digit) {
+        4 => 2,
+        1 | 2 => 4,
         _ => return false,
     };
-    if !cur.advance_if(is_separator) {
-        return false;
-    }
-    if !number(cur, 2).is_some_and(|digits| middle.contains(&digits)) {
-        return false;
-    }
-    if !cur.advance_if(is_separator) {
-        return false;
-    }
-    number(cur, *last.end()).is_some_and(|digits| last.contains(&digits))
+    cur.advance_if(is_separator)
+        && number(cur, 2)
+        && cur.advance_if(is_separator)
+        && number(cur, last)
 }
 
 fn month_name_date(cur: &mut Cursor<'_>) -> bool {
-    let Some(first) = cur.peek() else {
-        return false;
-    };
-    if MONTHS.can_start(first) {
-        // <month> <number> <number>, or <month><six digits>
-        if !month(cur) {
-            return false;
-        }
+    if month(cur) {
+        // <month> <number> <number>, or <month> <six digits>
         cur.advance_while(is_separator);
-        let first_number = cur.advance_while(is_digit);
-        if first_number == 0 {
-            return false;
+        match cur.advance_while(is_digit) {
+            0 => false,
+            6 if !cur.peek().is_some_and(is_letter) => true,
+            _ => {
+                cur.advance_while(is_separator);
+                last_number(cur)
+            }
         }
-        if first_number == 6 && at_end_or_termination(cur) {
-            return true;
-        }
-        cur.advance_while(is_separator);
-        cur.advance_while(is_digit) > 0 && at_end_or_termination(cur)
-    } else if is_digit(first) {
-        // <number> <month> <number>
-        cur.advance_while(is_digit);
-        cur.advance_while(is_separator);
-        if !month(cur) {
-            return false;
-        }
-        cur.advance_while(is_separator);
-        cur.advance_while(is_digit) > 0 && at_end_or_termination(cur)
     } else {
-        false
+        // <number> <month> <number>
+        cur.advance_while(is_digit) > 0
+            && {
+                cur.advance_while(is_separator);
+                month(cur)
+            }
+            && {
+                cur.advance_while(is_separator);
+                last_number(cur)
+            }
     }
 }
 
@@ -236,6 +189,9 @@ mod tests {
             ("FEBRUARY 17, 2009", "FEBRUARY 17, 2009"),
             ("february 17, 2009", "february 17, 2009"),
             ("Feb 17, 2009, at noon", "Feb 17, 2009"),
+            ("Feb 17, 2009)", "Feb 17, 2009"),
+            ("Feb 17, 2009!", "Feb 17, 2009"),
+            ("17 Feb 2009; then", "17 Feb 2009"),
             // without separators
             ("Feb172009", "Feb172009"),
             ("17Feb2009", "17Feb2009"),
@@ -258,6 +214,9 @@ mod tests {
             "17 February",
             "May I",
             "march",
+            "Feb 17, 2009th",
+            "3 May 5pm",
+            "Feb 123456x",
             "",
         ] {
             assert_eq!(Date.match_prefix(text), None, "{text:?}");
@@ -266,7 +225,6 @@ mod tests {
 
     #[test]
     fn a_month_name_must_be_whole() {
-        // In fastlex any prefix of a month name counted as the month.
         for text in ["Fe 17, 2009", "F 17, 2009", "17 Fe 2009", "Febr 17, 2009"] {
             assert_eq!(Date.match_prefix(text), None, "{text:?}");
         }

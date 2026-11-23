@@ -50,9 +50,7 @@ impl Matcher for LikeUrl {
         }
         let after_prefix = cur.pos();
         cur.advance_while2(is_letter_or_digit, is_url_symbol);
-        while cur.pos() > after_prefix && cur.prev().is_some_and(is_sentence_punctuation) {
-            cur.back();
-        }
+        cur.back_while(is_sentence_punctuation);
         cur.pos() > after_prefix
     }
 }
@@ -86,10 +84,19 @@ mod tests {
 
     #[test]
     fn needs_a_known_prefix_and_something_after_it() {
-        // In fastlex this matcher accepted any text: its prefix test could
-        // not fail.
         for text in [
-            "hello", "http", "http:/x", "ftp://x", "https://", "www.", "www..", "ww.x", ".", " ",
+            "hello",
+            "http",
+            "http:/x",
+            "ftp://x",
+            "https://",
+            "https://.",
+            "http://:",
+            "www.",
+            "www..",
+            "ww.x",
+            ".",
+            " ",
             "",
         ] {
             assert_eq!(LikeUrl.match_prefix(text), None, "{text:?}");

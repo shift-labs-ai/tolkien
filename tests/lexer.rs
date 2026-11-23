@@ -1,7 +1,7 @@
 //! The lexer as a whole: token order, coverage of the text, and the rules
 //! that decide which matcher wins.
 
-use tolkien::matchers::{self, LikeNumber, Word, LIKE_NUMBER};
+use tolkien::matchers::{self, LikeNumber, Word, DIGIT, LETTER, LIKE_NUMBER};
 use tolkien::{Cursor, Error, Lexer, Matcher, Token, OTHER};
 
 fn kinds_and_texts<'t>(lexer: &Lexer, text: &'t str) -> Vec<(&'static str, &'t str)> {
@@ -23,7 +23,7 @@ fn assert_covers(lexer: &Lexer, text: &str) {
     assert_eq!(pos, text.len(), "tokens stop early in {text:?}");
 }
 
-/// A matcher built from a closure, for tests about the lexer itself.
+/// A matcher built from a function, for tests about the lexer itself.
 struct Probe {
     kind: &'static str,
     overrides: &'static [&'static str],
@@ -111,6 +111,7 @@ fn tokens_cover_the_whole_text() {
         "a@b @ # $ % ^ & * ( ) : ; . , - _ + = ~ ` ' \" < > / \\ | ? !",
         "1 22 333 4444 55555 1.2.3 1/2/3 10:99 25:00 2022-13-45T99:99",
         "http:// https:// www. http://x www.x.y",
+        "-word 'tis --help word- a-b_c -1 --1 ---1 .5 ..5",
         "$ $$ $5 5$ 5 USD USD 5 5usd 5 km",
         "Feb February Feb 1 Feb 1 2 1 Feb 1 Feb2",
     ] {
@@ -141,6 +142,14 @@ fn tokens_cover_random_text() {
             .map(|_| ALPHABET[next() % ALPHABET.len()])
             .collect();
         assert_covers(&lexer, &text);
+        // WORD, ALPHA_NUMERIC_SEQUENCE and LIKE_NUMBER take every run that
+        // LETTER and DIGIT would.
+        assert!(
+            lexer
+                .tokens(&text)
+                .all(|t| t.kind != LETTER && t.kind != DIGIT),
+            "{text:?}"
+        );
     }
 }
 
@@ -324,14 +333,52 @@ fn rejects_matcher_sets_that_cannot_form_a_lexer() {
             probe("C", &[], never)
         ])
         .unwrap_err(),
-        Error::OverrideCycle(vec!["A", "B"])
+        Error::OverrideCycle(vec!["B", "A"])
     );
     assert_eq!(
         Lexer::new([probe("A", &["A"], never)]).unwrap_err(),
         Error::OverrideCycle(vec!["A"])
     );
     assert_eq!(
-        Error::OverrideCycle(vec!["A", "B"]).to_string(),
-        "matchers override each other in a circle: A, B"
+        Error::OverrideCycle(vec!["B", "A"]).to_string(),
+        "matchers override each other in a circle: B > A"
     );
+}
+
+#[test]
+fn an_override_cycle_names_only_the_matchers_in_the_circle() {
+    fn never(_: &mut Cursor<'_>) -> bool {
+        false
+    }
+    // X is stuck behind the circle and Y leads into it; neither is part of it.
+    let error = Lexer::new([
+        probe("X", &[], never),
+        probe("A", &["B", "X"], never),
+        probe("B", &["C"], never),
+        probe("C", &["A"], never),
+        probe("Y", &["A"], never),
+    ])
+    .unwrap_err();
+    assert_eq!(error, Error::OverrideCycle(vec!["B", "C", "A"]));
+}
+
+/// A matcher that reads a long run and then fails must not be asked again at
+/// every character of that run, or lexing the run takes quadratic time. Each
+/// text here is a run that some matcher reads far into. In a debug build one
+/// of them takes a few hundredths of a second when lexing is linear and many
+/// seconds when it is not.
+#[test]
+fn long_runs_are_lexed_in_linear_time() {
+    const UNITS: &[&str] = &[
+        "-", "_", ".", ",", "+", "#", "@", "'", "/", " ", "$", "a.", "a-", "1.", "1 ", "a'", "a_",
+        "www.", "Feb ", "5 U", "1:", "a@", "é", "—", "。",
+    ];
+    let lexer = Lexer::default();
+    for unit in UNITS {
+        let text = unit.repeat(10_000 / unit.len());
+        let started = std::time::Instant::now();
+        assert_covers(&lexer, &text);
+        let elapsed = started.elapsed();
+        assert!(elapsed.as_secs() < 2, "a run of {unit:?} took {elapsed:?}");
+    }
 }

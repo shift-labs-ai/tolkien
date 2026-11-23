@@ -8,9 +8,9 @@ use crate::matcher::Matcher;
 /// Kind of [`Word`] tokens.
 pub const WORD: &str = "WORD";
 
-/// Letters, with dashes and at most one apostrophe inside, up to white space,
-/// sentence punctuation or the end of the text: `word`, `first-second`,
-/// `don't`.
+/// A letter, then letters, dashes and at most one apostrophe, up to white
+/// space, sentence punctuation or the end of the text: `word`,
+/// `first-second`, `don't`.
 ///
 /// Anything else in the run means it is not a word, so `word123` and
 /// `some_word` do not match at all.
@@ -26,26 +26,22 @@ impl Matcher for Word {
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
-        let mut letters = 0;
-        let mut apostrophe = false;
-        while let Some(c) = cur.peek() {
-            if is_letter(c) {
-                letters += 1;
-            } else if is_apostrophe(c) {
-                if apostrophe {
-                    return false;
-                }
-                apostrophe = true;
-            } else if is_dash(c) {
-                // Dashes join the parts of a word and do not count.
-            } else if is_word_termination(c) {
-                break;
-            } else {
-                return false;
-            }
-            cur.advance();
+        if !cur.advance_if(is_letter) {
+            return false;
         }
-        letters > 0
+        let mut apostrophe = false;
+        loop {
+            cur.advance_while(|c| is_letter(c) || is_dash(c));
+            match cur.peek() {
+                Some(c) if is_apostrophe(c) && !apostrophe => {
+                    apostrophe = true;
+                    cur.advance();
+                }
+                // A second apostrophe lands here too and is not a termination.
+                Some(c) => return is_word_termination(c),
+                None => return true,
+            }
+        }
     }
 }
 
@@ -78,6 +74,8 @@ mod tests {
             "?someword",
             "it's'",
             "-",
+            "-word",
+            "'tis",
             "",
         ] {
             assert_eq!(Word.match_prefix(text), None, "{text:?}");

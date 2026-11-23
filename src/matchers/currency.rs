@@ -14,22 +14,8 @@ use crate::trie::Trie;
 /// Kind of [`Currency`] tokens.
 pub const CURRENCY: &str = "CURRENCY";
 
-/// Every name and symbol as written, in lower case, in upper case, and with
-/// its first letter in upper case.
-static CURRENCIES: LazyLock<Trie> = LazyLock::new(|| {
-    let mut trie = Trie::new();
-    for word in NAMES.iter().chain(SYMBOLS) {
-        trie.insert(word);
-        trie.insert(&word.to_lowercase());
-        trie.insert(&word.to_uppercase());
-        let mut chars = word.chars();
-        if let Some(first) = chars.next() {
-            let capitalised: String = first.to_uppercase().chain(chars).collect();
-            trie.insert(&capitalised);
-        }
-    }
-    trie
-});
+static CURRENCIES: LazyLock<Trie> =
+    LazyLock::new(|| Trie::from_words_in_common_cases(NAMES.iter().chain(SYMBOLS)));
 
 /// An amount of money, in one of two forms.
 ///
@@ -40,9 +26,13 @@ static CURRENCIES: LazyLock<Trie> = LazyLock::new(|| {
 /// name, code or abbreviation that is not followed by a letter: `5 USD`,
 /// `5.4 Dollars`, `5,000 cents`.
 ///
-/// The list of names and abbreviations is long and is matched in any of
-/// three cases, so short ones collide with other words: `5 km` (convertible
-/// marks) and `5 ft` (forints) match.
+/// An amount is digits with full stops and commas between them, and may
+/// start with a full stop: `.50`.
+///
+/// The list of names and abbreviations is long, and each is matched in
+/// [four spellings](Trie::from_words_in_common_cases), so short ones collide
+/// with units and common words: `5 km` (convertible marks), `5 ft` (forints)
+/// and `5 all` (Albanian leks) match.
 pub struct Currency;
 
 fn is_amount_punctuation(c: char) -> bool {
@@ -54,23 +44,31 @@ fn symbol_first(cur: &mut Cursor<'_>) -> bool {
         return false;
     }
     let after_symbol = cur.pos();
-    let (_, digits) = cur.advance_while2(is_amount_punctuation, is_digit);
-    if digits == 0 {
+    if !amount(cur) {
         cur.set_pos(after_symbol);
-    } else if cur.prev().is_some_and(is_amount_punctuation) {
-        // "$5." is "$5" and the full stop of a sentence.
-        cur.back();
     }
     true
 }
 
+/// Digits with full stops and commas between them, after an optional full
+/// stop. Punctuation after the last digit is left out: "$5." is "$5" and the
+/// full stop of a sentence.
+fn amount(cur: &mut Cursor<'_>) -> bool {
+    cur.advance_if(is_full_stop);
+    if !cur.advance_if(is_digit) {
+        return false;
+    }
+    cur.advance_while2(is_amount_punctuation, is_digit);
+    cur.back_while(is_amount_punctuation);
+    true
+}
+
 fn amount_first(cur: &mut Cursor<'_>) -> bool {
-    let (_, digits) = cur.advance_while2(is_amount_punctuation, is_digit);
-    if digits == 0 || cur.prev().is_some_and(is_amount_punctuation) {
+    if !amount(cur) {
         return false;
     }
     cur.advance_if(is_whitespace);
-    CURRENCIES.advance_longest(cur).is_some() && !cur.peek().is_some_and(is_letter)
+    CURRENCIES.advance_longest(cur) && !cur.peek().is_some_and(is_letter)
 }
 
 impl Matcher for Currency {
@@ -110,6 +108,7 @@ mod tests {
             assert_eq!(Currency.match_prefix(text), Some(text));
         }
         assert_eq!(Currency.match_prefix("5USD."), Some("5USD"));
+        assert_eq!(Currency.match_prefix(".5 USD"), Some(".5 USD"));
         assert_eq!(
             Currency.match_prefix("1,000.50 euros, please"),
             Some("1,000.50 euros")
@@ -130,6 +129,9 @@ mod tests {
             ("€1,000.50 total", "€1,000.50"),
             ("$ 5", "$"),
             ("₪20,", "₪20"),
+            ("$5...", "$5"),
+            ("$.5", "$.5"),
+            ("$..5", "$"),
         ] {
             assert_eq!(Currency.match_prefix(text), Some(expected), "{text:?}");
         }
@@ -145,6 +147,9 @@ mod tests {
             "USD 5",
             "5 Centsless",
             "5 Dollarsign",
+            "..5 USD",
+            "5. USD",
+            "5 Abkhazia",
             "",
         ] {
             assert_eq!(Currency.match_prefix(text), None, "{text:?}");
@@ -153,17 +158,17 @@ mod tests {
 
     #[test]
     fn a_currency_name_must_be_whole() {
-        // In fastlex any prefix of a name counted as the name.
         for text in ["5 Dol", "5 Doll.", "5 U", "5 US "] {
             assert_eq!(Currency.match_prefix(text), None, "{text:?}");
         }
     }
 
-    /// Short abbreviations collide with units and words. This records the
-    /// behaviour taken over from fastlex; it is not a goal.
+    /// A known weak spot, pinned so that a change to it is a decision:
+    /// short abbreviations collide with units and common words.
     #[test]
     fn short_abbreviations_collide_with_other_words() {
-        assert_eq!(Currency.match_prefix("5 km"), Some("5 km"));
-        assert_eq!(Currency.match_prefix("5 ft"), Some("5 ft"));
+        for text in ["5 km", "5 ft", "5 all", "5 try", "5 pen", "5 K"] {
+            assert_eq!(Currency.match_prefix(text), Some(text));
+        }
     }
 }

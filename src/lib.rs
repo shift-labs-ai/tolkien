@@ -31,12 +31,11 @@
 #![warn(missing_docs)]
 
 pub mod chars;
-pub mod cursor;
-pub mod lexer;
-pub mod matcher;
+mod cursor;
+mod lexer;
+mod matcher;
 pub mod matchers;
-pub mod trie;
-#[allow(missing_docs)]
+mod trie;
 mod unicode_tables;
 
 pub use cursor::Cursor;

@@ -12,7 +12,7 @@ fn main() {
         eprintln!("usage: throughput FILE [ROUNDS]");
         std::process::exit(2);
     };
-    let rounds: u32 = args.next().and_then(|n| n.parse().ok()).unwrap_or(5);
+    let rounds: u32 = args.next().and_then(|n| n.parse().ok()).unwrap_or(5).max(1);
     let text = std::fs::read_to_string(&path).expect("a readable UTF-8 file");
     let lexer = Lexer::default();
 

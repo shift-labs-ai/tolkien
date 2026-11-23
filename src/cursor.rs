@@ -1,4 +1,4 @@
-//! A position in a text that matchers move forward.
+//! A position in a text that matchers move.
 
 /// A cursor over a `&str`. Positions are byte offsets and always sit on a
 /// character boundary.
@@ -23,11 +23,9 @@ impl<'t> Cursor<'t> {
     /// # Panics
     /// If `pos` is not on a character boundary of `text`.
     pub fn at(text: &'t str, pos: usize) -> Self {
-        assert!(
-            text.is_char_boundary(pos),
-            "position {pos} is not a character boundary"
-        );
-        Self { text, pos }
+        let mut cursor = Self::new(text);
+        cursor.set_pos(pos);
+        cursor
     }
 
     /// The current byte offset.
@@ -88,6 +86,17 @@ impl<'t> Cursor<'t> {
         Some(c)
     }
 
+    /// Moves back while `pred` accepts the character before the cursor.
+    /// Returns how many characters were passed.
+    pub fn back_while(&mut self, pred: impl Fn(char) -> bool) -> usize {
+        let mut count = 0;
+        while let Some(c) = self.prev().filter(|&c| pred(c)) {
+            self.pos -= c.len_utf8();
+            count += 1;
+        }
+        count
+    }
+
     /// Moves past the character at the cursor if `pred` accepts it.
     #[inline]
     pub fn advance_if(&mut self, pred: impl FnOnce(char) -> bool) -> bool {
@@ -142,30 +151,6 @@ impl<'t> Cursor<'t> {
         }
         (n1, n2)
     }
-
-    /// [`advance_while2`](Cursor::advance_while2) with three predicates.
-    #[inline]
-    pub fn advance_while3(
-        &mut self,
-        p1: impl Fn(char) -> bool,
-        p2: impl Fn(char) -> bool,
-        p3: impl Fn(char) -> bool,
-    ) -> (usize, usize, usize) {
-        let (mut n1, mut n2, mut n3) = (0, 0, 0);
-        while let Some(c) = self.peek() {
-            if p1(c) {
-                n1 += 1;
-            } else if p2(c) {
-                n2 += 1;
-            } else if p3(c) {
-                n3 += 1;
-            } else {
-                break;
-            }
-            self.pos += c.len_utf8();
-        }
-        (n1, n2, n3)
-    }
 }
 
 #[cfg(test)]
@@ -206,6 +191,16 @@ mod tests {
     }
 
     #[test]
+    fn back_while_stops_at_the_first_rejected_character_and_at_the_start() {
+        let mut cur = Cursor::at("aé..", 5);
+        assert_eq!(cur.back_while(|c| c == '.'), 2);
+        assert_eq!(cur.pos(), 3);
+        assert_eq!(cur.back_while(|c| c == '.'), 0);
+        assert_eq!(cur.back_while(|_| true), 2);
+        assert_eq!(cur.pos(), 0);
+    }
+
+    #[test]
     fn advance_str_moves_only_on_a_full_match() {
         let mut cur = Cursor::new("https://x");
         assert!(!cur.advance_str("http://"));
@@ -218,5 +213,11 @@ mod tests {
     #[should_panic(expected = "not a character boundary")]
     fn set_pos_rejects_the_middle_of_a_character() {
         Cursor::new("é").set_pos(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "not a character boundary")]
+    fn at_rejects_a_position_past_the_end() {
+        Cursor::at("é", 3);
     }
 }

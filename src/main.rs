@@ -3,6 +3,7 @@
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
+use tolkien::matchers::{LINE_TERMINATION, WHITE_SPACE};
 use tolkien::Lexer;
 
 const USAGE: &str = "\
@@ -56,7 +57,7 @@ fn main() -> ExitCode {
     let lexer = Lexer::default();
     let mut out = io::BufWriter::new(io::stdout().lock());
     for token in lexer.tokens(&text) {
-        if skip_space && matches!(token.kind, "WHITE_SPACE" | "LINE_TERMINATION") {
+        if skip_space && matches!(token.kind, WHITE_SPACE | LINE_TERMINATION) {
             continue;
         }
         let line = writeln!(

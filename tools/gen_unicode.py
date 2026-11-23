@@ -21,6 +21,7 @@ Pure standard library. The UCD files are downloaded once into tools/.ucd/
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import re
 import sys
@@ -87,14 +88,16 @@ NAMED_SETS = [
     },
     {
         "id": "QUESTION_MARK",
-        "doc": "Question marks, including the ornament forms.",
-        "name": r"\bQUESTION MARK\b",
+        "doc": "Question marks, including the ornament forms and the marks that combine "
+        "a question with an exclamation.",
+        "name": r"\bQUESTION (EXCLAMATION )?MARK\b|\bINTERROBANG$",
         "categories": MARKS,
     },
     {
         "id": "EXCLAMATION_MARK",
-        "doc": "Exclamation marks, including the ornament forms.",
-        "name": r"\bEXCLAMATION MARK\b",
+        "doc": "Exclamation marks, including the ornament forms and the marks that combine "
+        "an exclamation with a question.",
+        "name": r"\bEXCLAMATION (QUESTION )?MARK\b|\bINTERROBANG$",
         "categories": MARKS,
         # U+1F199 SQUARED UP WITH EXCLAMATION MARK and U+1F51B ON WITH
         # EXCLAMATION MARK ... are the emoji words "UP!" and "ON!".
@@ -102,9 +105,10 @@ NAMED_SETS = [
     },
     {
         "id": "APOSTROPHE",
-        "doc": "Apostrophes that can stand inside a word.",
+        "doc": "Punctuation apostrophes that can stand inside a word. The modifier-letter "
+        "apostrophes are letters.",
         "name": r"\bAPOSTROPHE$",
-        "categories": PUNCTUATION + ["Lm"],
+        "categories": PUNCTUATION,
         "extra": {
             0x2019: "RIGHT SINGLE QUOTATION MARK is the preferred apostrophe in "
             "running text (The Unicode Standard, section 6.2), but is not named one",
@@ -290,6 +294,14 @@ def render_rust(chars, range_tables, named_sets) -> str:
         for cp in members:
             out.append(f"    '\\u{{{cp:04X}}}', // {display_name(chars, cp)}")
         out.append("];")
+    for const, typ, idents in (
+        ("RANGE_TABLES", "&[(u32, u32)]", [ident for ident, _, _ in range_tables]),
+        ("NAMED_SETS", "&[char]", [rule["id"] for rule, _, _ in named_sets]),
+    ):
+        out += ["", "/// Every table of this kind with its name, for the tests.", "#[cfg(test)]"]
+        out.append(f"pub(crate) const {const}: &[(&str, {typ})] = &[")
+        out += [f'    ("{ident}", {ident}),' for ident in idents]
+        out.append("];")
     return "\n".join(out) + "\n"
 
 
@@ -333,12 +345,19 @@ def render_review(chars, range_tables, named_sets) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="write nothing; fail if the committed files are stale",
+    )
+    args = parser.parse_args()
     chars, range_tables, named_sets = build()
     outputs = {
         RUST_OUT: render_rust(chars, range_tables, named_sets),
         REVIEW_OUT: render_review(chars, range_tables, named_sets),
     }
-    if "--check" in sys.argv[1:]:
+    if args.check:
         stale = [p for p, text in outputs.items() if not p.exists() or p.read_text("utf-8") != text]
         if stale:
             names = ", ".join(str(p.relative_to(ROOT)) for p in stale)

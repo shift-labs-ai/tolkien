@@ -112,9 +112,9 @@ Rule: name matches `\bCOLON$`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po.
 
 ## QUESTION_MARK
 
-Question marks, including the ornament forms. 23 characters.
+Question marks, including the ornament forms and the marks that combine a question with an exclamation. 26 characters.
 
-Rule: name matches `\bQUESTION MARK\b`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po, So.
+Rule: name matches `\bQUESTION (EXCLAMATION )?MARK\b|\bINTERROBANG$`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po, So.
 
 | Code point | Char | Name | Category | Selected by |
 |---|---|---|---|---|
@@ -125,12 +125,15 @@ Rule: name matches `\bQUESTION MARK\b`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po, 
 | U+061F | ؟ | ARABIC QUESTION MARK | Po | name |
 | U+1367 | ፧ | ETHIOPIC QUESTION MARK | Po | name |
 | U+1945 | ᥅ | LIMBU QUESTION MARK | Po | name |
+| U+203D | ‽ | INTERROBANG | Po | name |
 | U+2047 | ⁇ | DOUBLE QUESTION MARK | Po | name |
+| U+2048 | ⁈ | QUESTION EXCLAMATION MARK | Po | name |
 | U+2049 | ⁉ | EXCLAMATION QUESTION MARK | Po | name |
 | U+2753 | ❓ | BLACK QUESTION MARK ORNAMENT | So | name |
 | U+2754 | ❔ | WHITE QUESTION MARK ORNAMENT | So | name |
 | U+2CFA | ⳺ | COPTIC OLD NUBIAN DIRECT QUESTION MARK | Po | name |
 | U+2CFB | ⳻ | COPTIC OLD NUBIAN INDIRECT QUESTION MARK | Po | name |
+| U+2E18 | ⸘ | INVERTED INTERROBANG | Po | name |
 | U+2E2E | ⸮ | REVERSED QUESTION MARK | Po | name |
 | U+2E54 | ⹔ | MEDIEVAL QUESTION MARK | Po | name |
 | U+A60F | ꘏ | VAI QUESTION MARK | Po | name |
@@ -144,9 +147,9 @@ Rule: name matches `\bQUESTION MARK\b`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po, 
 
 ## EXCLAMATION_MARK
 
-Exclamation marks, including the ornament forms. 18 characters.
+Exclamation marks, including the ornament forms and the marks that combine an exclamation with a question. 21 characters.
 
-Rule: name matches `\bEXCLAMATION MARK\b` and not `\bWITH\b`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po, So.
+Rule: name matches `\bEXCLAMATION (QUESTION )?MARK\b|\bINTERROBANG$` and not `\bWITH\b`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po, So.
 
 | Code point | Char | Name | Category | Selected by |
 |---|---|---|---|---|
@@ -156,11 +159,14 @@ Rule: name matches `\bEXCLAMATION MARK\b` and not `\bWITH\b`, category in Pc, Pd
 | U+07F9 | ߹ | NKO EXCLAMATION MARK | Po | name |
 | U+1944 | ᥄ | LIMBU EXCLAMATION MARK | Po | name |
 | U+203C | ‼ | DOUBLE EXCLAMATION MARK | Po | name |
+| U+203D | ‽ | INTERROBANG | Po | name |
 | U+2048 | ⁈ | QUESTION EXCLAMATION MARK | Po | name |
+| U+2049 | ⁉ | EXCLAMATION QUESTION MARK | Po | name |
 | U+2755 | ❕ | WHITE EXCLAMATION MARK ORNAMENT | So | name |
 | U+2757 | ❗ | HEAVY EXCLAMATION MARK SYMBOL | So | name |
 | U+2762 | ❢ | HEAVY EXCLAMATION MARK ORNAMENT | So | name |
 | U+2763 | ❣ | HEAVY HEART EXCLAMATION MARK ORNAMENT | So | name |
+| U+2E18 | ⸘ | INVERTED INTERROBANG | Po | name |
 | U+2E53 | ⹓ | MEDIEVAL EXCLAMATION MARK | Po | name |
 | U+2E60 | ⹠ | WIGGLY EXCLAMATION MARK | Po | name |
 | U+2E61 | ⹡ | INVERTED WIGGLY EXCLAMATION MARK | Po | name |
@@ -171,18 +177,14 @@ Rule: name matches `\bEXCLAMATION MARK\b` and not `\bWITH\b`, category in Pc, Pd
 
 ## APOSTROPHE
 
-Apostrophes that can stand inside a word. 8 characters.
+Punctuation apostrophes that can stand inside a word. The modifier-letter apostrophes are letters. 4 characters.
 
-Rule: name matches `\bAPOSTROPHE$`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po, Lm.
+Rule: name matches `\bAPOSTROPHE$`, category in Pc, Pd, Ps, Pe, Pi, Pf, Po.
 
 | Code point | Char | Name | Category | Selected by |
 |---|---|---|---|---|
 | U+0027 | ' | APOSTROPHE | Po | name |
-| U+02BC | ʼ | MODIFIER LETTER APOSTROPHE | Lm | name |
-| U+02EE | ˮ | MODIFIER LETTER DOUBLE APOSTROPHE | Lm | name |
 | U+055A | ՚ | ARMENIAN APOSTROPHE | Po | name |
-| U+07F4 | ߴ | NKO HIGH TONE APOSTROPHE | Lm | name |
-| U+07F5 | ߵ | NKO LOW TONE APOSTROPHE | Lm | name |
 | U+2019 | ’ | RIGHT SINGLE QUOTATION MARK | Pf | added: RIGHT SINGLE QUOTATION MARK is the preferred apostrophe in running text (The Unicode Standard, section 6.2), but is not named one |
 | U+FF07 | ＇ | FULLWIDTH APOSTROPHE | Po | name |
 

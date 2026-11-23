@@ -43,6 +43,28 @@ impl Trie {
         trie
     }
 
+    /// A trie holding each of `words` in four spellings: as given, in lower
+    /// case, in upper case, and with only its first letter raised to upper
+    /// case. `Rs` gives `Rs`, `rs` and `RS`; `kr` gives `kr`, `KR` and `Kr`.
+    pub fn from_words_in_common_cases<I>(words: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        let mut trie = Self::new();
+        for word in words {
+            let word = word.as_ref();
+            trie.insert(word);
+            trie.insert(&word.to_lowercase());
+            trie.insert(&word.to_uppercase());
+            let mut rest = word.chars();
+            if let Some(first) = rest.next() {
+                trie.insert(&first.to_uppercase().chain(rest).collect::<String>());
+            }
+        }
+        trie
+    }
+
     /// Adds `word`. The empty string is ignored.
     pub fn insert(&mut self, word: &str) {
         if word.is_empty() {
@@ -74,37 +96,24 @@ impl Trie {
             .map(|i| children[i].1 as usize)
     }
 
-    /// True when some word starts with `c`.
-    pub fn can_start(&self, c: char) -> bool {
-        self.child(0, c).is_some()
-    }
-
     /// Moves the cursor past the longest word that starts at it and returns
-    /// that word's length in characters. With no such word the cursor stays
-    /// where it was and the result is `None`.
-    pub fn advance_longest(&self, cur: &mut Cursor<'_>) -> Option<usize> {
-        let start = cur.pos();
+    /// `true`. With no such word the cursor stays where it is and the result
+    /// is `false`.
+    pub fn advance_longest(&self, cur: &mut Cursor<'_>) -> bool {
         let mut node = 0;
-        let mut len = 0;
-        let mut best = None;
-        while let Some(next) = cur.peek().and_then(|c| self.child(node, c)) {
-            cur.advance();
+        let mut end = None;
+        let mut ahead = cur.clone();
+        while let Some(next) = ahead.peek().and_then(|c| self.child(node, c)) {
+            ahead.advance();
             node = next;
-            len += 1;
             if self.nodes[node].word {
-                best = Some((cur.pos(), len));
+                end = Some(ahead.pos());
             }
         }
-        match best {
-            Some((end, len)) => {
-                cur.set_pos(end);
-                Some(len)
-            }
-            None => {
-                cur.set_pos(start);
-                None
-            }
+        if let Some(end) = end {
+            cur.set_pos(end);
         }
+        end.is_some()
     }
 }
 
@@ -114,7 +123,7 @@ mod tests {
 
     fn longest<'t>(trie: &Trie, text: &'t str) -> Option<&'t str> {
         let mut cur = Cursor::new(text);
-        trie.advance_longest(&mut cur).map(|_| &text[..cur.pos()])
+        trie.advance_longest(&mut cur).then(|| &text[..cur.pos()])
     }
 
     #[test]
@@ -140,17 +149,26 @@ mod tests {
     fn leaves_the_cursor_alone_without_a_match() {
         let trie = Trie::from_words(["Feb"]);
         let mut cur = Cursor::new("Fe 1");
-        assert_eq!(trie.advance_longest(&mut cur), None);
+        assert!(!trie.advance_longest(&mut cur));
         assert_eq!(cur.pos(), 0);
     }
 
     #[test]
-    fn counts_characters_and_knows_first_letters() {
+    fn matches_words_outside_ascii_and_ignores_the_empty_word() {
         let trie = Trie::from_words(["Öre", ""]);
-        let mut cur = Cursor::new("Öre!");
-        assert_eq!(trie.advance_longest(&mut cur), Some(3));
-        assert_eq!(cur.pos(), 4);
-        assert!(trie.can_start('Ö'));
-        assert!(!trie.can_start('O'));
+        assert_eq!(longest(&trie, "Öre!"), Some("Öre"));
+        assert_eq!(longest(&trie, "Ore"), None);
+        assert_eq!(longest(&trie, "!"), None);
+    }
+
+    #[test]
+    fn common_cases_are_as_given_lower_upper_and_capitalised() {
+        let trie = Trie::from_words_in_common_cases(["maLoti", "öre"]);
+        for word in ["maLoti", "maloti", "MALOTI", "MaLoti", "öre", "ÖRE", "Öre"] {
+            assert_eq!(longest(&trie, word), Some(word));
+        }
+        for word in ["Maloti", "mALOTI", "öRE"] {
+            assert_eq!(longest(&trie, word), None, "{word}");
+        }
     }
 }
