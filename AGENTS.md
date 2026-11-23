@@ -92,6 +92,15 @@ there.
   public interface only and is the worked example; keep it compiling when
   that interface changes, and add to it what a new building block makes
   possible.
+- **Fail fast, on what is cheap to test.** A matcher is asked far more
+  often than it matches, so what it costs is what it costs to fail. Each
+  layer refuses on a cheaper test than the next: `can_start` on one
+  character, a `Trie` on two bytes, a `Pattern` on the places its first
+  steps fix and on the characters its shortest token can hold
+  (`first_places`), a shortcut on a few bytes before it asks a matcher. A
+  new building block gets such a test, and the test may refuse only what
+  the full match refuses: check it against the match without it, as the
+  tests of `pattern.rs` do.
 - **A pattern step is a cursor method.** `pattern.rs` adds no way of
   reading text: each `Step` does what a matcher written by hand does with
   one `Cursor` call or a short loop of them. A new step gets its rule for

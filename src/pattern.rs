@@ -475,35 +475,89 @@ fn start(steps: &[Step], first: First) -> Start {
         .unwrap_or(Start::Passed)
 }
 
-/// The characters that `steps` take first whatever the text, as far as
-/// that is plain to see: for each place, the ASCII characters of the class
-/// that stands there. A character outside ASCII may stand in any place.
-fn prefix(steps: &[Step]) -> Vec<u128> {
+/// Every ASCII character.
+const ANY: u128 = u128::MAX;
+
+/// The fewest characters `steps` take when they succeed.
+fn shortest(steps: &[Step]) -> usize {
+    let of = |step: &Step| match &step.0 {
+        Kind::Run { min, .. } => *min,
+        Kind::Text(text) => text.chars().count(),
+        Kind::Words(_) | Kind::Number { .. } | Kind::Separator(_) | Kind::SameSeparator => 1,
+        Kind::Either(choices) => choices
+            .iter()
+            .map(|steps| shortest(steps))
+            .min()
+            .unwrap_or(0),
+        Kind::Not(_)
+        | Kind::NotBefore(_)
+        | Kind::Optional(_)
+        | Kind::Repeat { .. }
+        | Kind::TrimEnd(_) => 0,
+    };
+    steps
+        .iter()
+        .fold(0usize, |sum, step| sum.saturating_add(of(step)))
+}
+
+/// The ASCII characters `steps` can take.
+fn alphabet(steps: &[Step]) -> u128 {
+    let of = |step: &Step| match &step.0 {
+        Kind::Run { class, .. } | Kind::Separator(class) => class.ascii,
+        Kind::Text(text) => text
+            .bytes()
+            .filter(u8::is_ascii)
+            .fold(0, |set, byte| set | 1 << byte),
+        Kind::Number { .. } => Class::range('0', '9').ascii,
+        // The words are not looked through.
+        Kind::Words(_) => ANY,
+        Kind::Optional(steps) | Kind::Repeat { steps, .. } => alphabet(steps),
+        Kind::Either(choices) => choices.iter().fold(0, |set, steps| set | alphabet(steps)),
+        // These take nothing, or what a separator took.
+        Kind::SameSeparator | Kind::Not(_) | Kind::NotBefore(_) | Kind::TrimEnd(_) => 0,
+    };
+    steps.iter().fold(0, |set, step| set | of(step))
+}
+
+/// What may stand in each of the first places of a token, for as many
+/// places as every token has: the ASCII characters allowed there. A
+/// character outside ASCII may stand in any place.
+///
+/// The first steps fix some places to one class each. The places after
+/// those hold some character the pattern can take, up to the length of the
+/// shortest token: `fewest` is a lower bound on that length from outside
+/// the steps.
+fn first_places(steps: &[Step], fewest: usize) -> Vec<u128> {
     /// More places than this are not worth a test of their own.
-    const LONGEST: usize = 8;
-    let mut prefix = Vec::new();
+    const LONGEST: usize = 16;
+    let mut places = Vec::new();
     for step in steps {
         let fixed = match &step.0 {
             Kind::Run { class, min, max } => {
-                prefix.extend(std::iter::repeat_n(class.ascii, *min));
+                places.extend(std::iter::repeat_n(class.ascii, (*min).min(LONGEST)));
                 min == max
             }
             Kind::Text(text) if text.is_ascii() => {
-                prefix.extend(text.bytes().map(|byte| 1 << byte));
+                places.extend(text.bytes().map(|byte| 1 << byte));
                 true
             }
             Kind::Separator(class) => {
-                prefix.push(class.ascii);
+                places.push(class.ascii);
                 true
             }
             _ => false,
         };
-        if !fixed || prefix.len() >= LONGEST {
+        if !fixed || places.len() >= LONGEST {
             break;
         }
     }
-    prefix.truncate(LONGEST);
-    prefix
+    let length = shortest(steps).max(fewest).min(LONGEST);
+    places.truncate(LONGEST);
+    let any = alphabet(steps);
+    if any != ANY && places.len() < length {
+        places.resize(length, any);
+    }
+    places
 }
 
 /// A [`Matcher`] built from [`Step`]s. See the [module](self).
@@ -519,10 +573,10 @@ pub struct Pattern {
     /// True when a token can start with a character outside ASCII. Most
     /// patterns cannot, and say so without looking at the character.
     starts_outside_ascii: bool,
-    /// The characters every token starts with, as far as the first steps
-    /// fix them: for each place, the ASCII characters that may stand there.
-    /// Most text a pattern is asked about fails here, before any step.
-    prefix: Vec<u128>,
+    /// What may stand in each of the first places of a token:
+    /// [`first_places`]. Most text a pattern is asked about fails here,
+    /// before any step.
+    first_places: Vec<u128>,
 }
 
 impl Pattern {
@@ -539,9 +593,9 @@ impl Pattern {
             count: None,
             ascii_starts: 0,
             starts_outside_ascii: false,
-            prefix: Vec::new(),
+            first_places: Vec::new(),
         };
-        pattern.prefix = prefix(&pattern.steps);
+        pattern.first_places = first_places(&pattern.steps, 0);
         for byte in 0..128u8 {
             if start(&pattern.steps, First::Is(byte as char)) == Start::Taken {
                 pattern.ascii_starts |= 1 << byte;
@@ -555,6 +609,8 @@ impl Pattern {
     /// `min` to `max` characters of `class`: a card number has 13 to 19
     /// digits, however they are grouped.
     pub fn with_count(mut self, class: Class, min: usize, max: usize) -> Self {
+        // A token holds the characters that are counted.
+        self.first_places = first_places(&self.steps, min);
         self.count = Some((class, min, max));
         self
     }
@@ -576,7 +632,7 @@ impl Matcher for Pattern {
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         let from = cur.pos();
         let bytes = cur.rest().as_bytes();
-        for (place, allowed) in self.prefix.iter().enumerate() {
+        for (place, allowed) in self.first_places.iter().enumerate() {
             match bytes.get(place) {
                 Some(byte) if !byte.is_ascii() => break,
                 Some(byte) if allowed & 1 << byte != 0 => {}
@@ -804,9 +860,9 @@ mod tests {
             ]
         };
         let quick = Pattern::new("P", steps());
-        assert_eq!(quick.prefix.len(), 5);
+        assert_eq!(quick.first_places.len(), 6);
         let slow = Pattern {
-            prefix: Vec::new(),
+            first_places: Vec::new(),
             ..Pattern::new("P", steps())
         };
         for text in [
@@ -832,6 +888,62 @@ mod tests {
         }
         assert_eq!(quick.match_prefix("1a:xab!?"), Some("1a:xab!"));
         assert_eq!(quick.match_prefix("éé:xa!"), Some("éé:xa!"));
+    }
+
+    /// A token is as long as its shortest form, and holds only characters
+    /// some step takes: a card number is refused at `2009 was`, by the
+    /// sixth character.
+    #[test]
+    fn a_token_has_a_shortest_length_and_an_alphabet() {
+        let group = || [Step::one(Class::chars(" -")), Step::run(ascii_digit())];
+        let steps = || [Step::run(ascii_digit()), Step::repeat(7, group())];
+        let card = Pattern::new("CARD", steps()).with_count(ascii_digit(), 13, 19);
+        let digits_and_separators = Class::chars(" -0123456789").ascii;
+        assert_eq!(card.first_places.len(), 13);
+        assert!(card
+            .first_places
+            .iter()
+            .skip(1)
+            .all(|&set| set == digits_and_separators));
+        let slow = Pattern {
+            first_places: Vec::new(),
+            ..Pattern::new("CARD", steps()).with_count(ascii_digit(), 13, 19)
+        };
+        for text in [
+            "4111 1111 1111 1111",
+            "4111-1111-1111-1",
+            "2009 was",
+            "4111 1111 1111 x",
+            "4111 1111 1111",
+            "4111 1111 111٣ 1111",
+            "4111 1111 1111 1111 1111",
+            "1",
+        ] {
+            assert_eq!(card.match_prefix(text), slow.match_prefix(text), "{text:?}");
+        }
+
+        let lengths = |steps: Vec<Step>| first_places(&steps, 0).len();
+        let text = |text| Step::text(text);
+        assert_eq!(
+            lengths(vec![text("ab"), Step::optional([text("c")]), text("de")]),
+            4
+        );
+        assert_eq!(
+            lengths(vec![Step::either([vec![text("abc")], vec![text("d")]])]),
+            1
+        );
+        assert_eq!(
+            lengths(vec![Step::number(3, 255), text("."), Step::number(3, 255)]),
+            3
+        );
+        assert_eq!(lengths(vec![Step::exactly(40, ascii_digit())]), 16);
+        assert_eq!(
+            lengths(vec![Step::between(usize::MAX, usize::MAX, ascii_digit())]),
+            16
+        );
+        // Words may hold any character, so only the fixed places are tested.
+        let words = || Step::words(Trie::from_words(["ab"]));
+        assert_eq!(lengths(vec![text("x"), words(), text("yz")]), 1);
     }
 
     #[test]

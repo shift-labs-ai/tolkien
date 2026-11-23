@@ -223,12 +223,19 @@ let lexer = Lexer::with([Box::new(card) as Box<dyn Matcher>, Box::new(mac)]).unw
 | `trim_end` | Step back over a class at the end |
 | `Pattern::with_count` | How many characters of a class the whole token holds |
 
-A pattern works out by itself where it can start. A pattern of a fixed
-shape, such as a key or a MAC address, costs what the same matcher written
-by hand costs, within 3%. One that goes round, such as the card number,
-costs about twice as much each time it is asked, which on the texts of the
-table below is 5 to 15% of the whole. With five patterns added, a lexer
-was 9 to 21% slower than with the same five matchers written by hand.
+A pattern fails fast by itself. From its steps it works out three things
+that are cheap to test before any step runs: the characters a token can
+start with, the characters its first steps fix in place, and, up to the
+length of the shortest token, that each character is one the pattern can
+take at all. A card number is refused at `2009 was` by its sixth
+character.
+
+So a pattern costs what the same matcher written by hand costs: on the
+texts of the table below, each of five patterns alone was within 3% of
+its matcher by hand, and the five together within 6 to 9%. The exception
+is text a pattern has to read through before it fails, such as a column
+of numbers for the card number: there the steps run, and they cost about
+twice the code written by hand.
 
 Bound what a pattern reads. `repeat` takes the largest number of rounds
 for that reason: a card number of any number of groups reads a whole
