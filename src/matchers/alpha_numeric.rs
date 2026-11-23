@@ -1,7 +1,7 @@
 //! Identifiers and codes: letters mixed with digits.
 
 use super::BASE;
-use crate::chars::{classes, is_dash, is_letter, is_letter_or_digit};
+use crate::chars::{is, is_dash, is_letter, is_letter_or_digit};
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
 use crate::unicode_tables as tables;
@@ -36,7 +36,7 @@ impl Matcher for AlphaNumericSequence {
             return false;
         }
         const JOINED: u32 = tables::DECIMAL_DIGIT | tables::DASH | tables::UNDERSCORE;
-        let (letters, _) = cur.advance_while2(is_letter, |c| classes(c) & JOINED != 0);
+        let (letters, _) = cur.advance_while2(is_letter, |c| is(c, JOINED));
         cur.back_while(is_dash);
         letters > 0
     }

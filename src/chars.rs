@@ -61,7 +61,7 @@ pub(crate) fn classes(c: char) -> u32 {
 
 /// True when `c` is in at least one of the classes of `mask`.
 #[inline]
-fn is(c: char, mask: u32) -> bool {
+pub(crate) fn is(c: char, mask: u32) -> bool {
     classes(c) & mask != 0
 }
 

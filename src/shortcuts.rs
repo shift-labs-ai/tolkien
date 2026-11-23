@@ -172,6 +172,7 @@ enum After {
     /// the text: the run is a word.
     WordEnd,
     /// A digit, a dash, an apostrophe or an underscore: the run may go on.
+    /// A letter is counted here too, though the run has taken them all.
     Joiner,
     /// Any other mark: the run is not a word, and is the whole of an
     /// alphanumeric sequence.
@@ -355,17 +356,17 @@ pub(crate) fn token(text: &str, start: usize) -> Option<(&'static str, usize)> {
             // to an `@`, through the bytes of a local part if the run does
             // not reach it; a URL starts with a prefix that ends in `:` or
             // `.`.
-            let next = bytes.get(len).copied();
             if starts_with_month(bytes, len) {
                 if let Some(date) = ask(&Date, text, start) {
                     return Some(date);
                 }
             }
-            // Most words stand before white space. It goes on to neither,
-            // and ends a word, as in `word`.
+            // Most words stand before white space or end the text. Neither
+            // an address nor a URL goes on there, and a word ends.
             if matches!(kind_at(len), None | Some(Byte::Space | Byte::Break)) {
                 return Some((WORD, start + len));
             }
+            let next = bytes.get(len).copied();
             if next.is_some_and(goes_on_to_an_at) && local_part(bytes).is_some() {
                 if let Some(email) = ask(&LikeEmail, text, start) {
                     return Some(email);
@@ -418,7 +419,8 @@ pub(crate) fn token(text: &str, start: usize) -> Option<(&'static str, usize)> {
                 // but `Symbol` starts with a character of some class.
                 Some((SYMBOL, start + c.len_utf8()))
             } else if classes & tables::LETTER != 0 {
-                // No other matcher starts with a letter outside ASCII.
+                // Only `Word`, `AlphaNumericSequence` and `Letter` start
+                // with a letter outside ASCII.
                 word(text, start, 0)
             } else {
                 None

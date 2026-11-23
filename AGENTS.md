@@ -102,7 +102,8 @@ there.
   in `tests/lexer.rs`, and the fuzzer's `reference` check. **A new matcher,
   or a matcher that takes a new first character or a new kind of text, has
   to be checked against every rule in `shortcuts.rs`**; each rule names the
-  matchers it has ruled out.
+  matchers it has ruled out. Where a rule takes more than a few bytes to
+  state, a shortcut asks the matcher itself and does not state it again.
 - **Measure before and after.** `cargo run --release --example throughput`
   on the corpora, best of many rounds: a short file measured few times is
   noise. A repeated text flatters the result, because the processor learns

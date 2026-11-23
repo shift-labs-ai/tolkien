@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use super::BASE;
-use crate::chars::{classes, is_letter};
+use crate::chars::{is, is_letter};
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
 use crate::trie::Trie;
@@ -55,11 +55,11 @@ const NUMERIC_SEPARATORS: u32 =
     tables::DASH | tables::FULL_STOP | tables::UNDERSCORE | tables::SLASH;
 
 fn is_numeric_separator(c: char) -> bool {
-    c == ' ' || classes(c) & NUMERIC_SEPARATORS != 0
+    c == ' ' || is(c, NUMERIC_SEPARATORS)
 }
 
 fn is_separator(c: char) -> bool {
-    c == ' ' || classes(c) & (NUMERIC_SEPARATORS | tables::COMMA) != 0
+    c == ' ' || is(c, NUMERIC_SEPARATORS | tables::COMMA)
 }
 
 fn is_ascii_digit(c: char) -> bool {
@@ -103,9 +103,10 @@ const fn folded(bytes: [u8; 3]) -> u32 {
     u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0]) | 0x0020_2020
 }
 
-/// Where the three letters `folded` are looked up in [`MONTH_STARTS`].
-const fn slot(folded: u32) -> usize {
-    (folded.wrapping_mul(MONTH_STARTS.multiplier) >> 28) as usize
+/// The slot, of sixteen, that `multiplier` sends the three letters `folded`
+/// to.
+const fn slot(folded: u32, multiplier: u32) -> usize {
+    (folded.wrapping_mul(multiplier) >> 28) as usize
 }
 
 /// The first three letters of every month name, each in a slot of its own.
@@ -126,7 +127,7 @@ const MONTH_STARTS: MonthStarts = {
                 panic!("a month name has three letters or more");
             };
             let start = folded([a, b, c]);
-            let slot = (start.wrapping_mul(multiplier) >> 28) as usize;
+            let slot = slot(start, multiplier);
             if slots[slot] != 0 && slots[slot] != start {
                 break;
             }
@@ -152,7 +153,7 @@ const MONTH_STARTS: MonthStarts = {
 fn may_start_with_month(text: &[u8]) -> bool {
     text.first_chunk::<3>().is_some_and(|&start| {
         let start = folded(start);
-        MONTH_STARTS.slots[slot(start)] == start
+        MONTH_STARTS.slots[slot(start, MONTH_STARTS.multiplier)] == start
     })
 }
 

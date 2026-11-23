@@ -172,8 +172,8 @@ fn spans(lexer: &Lexer, text: &str) -> Vec<(&'static str, usize, usize)> {
 
 /// The default lexer skips matchers that cannot start with a character, and
 /// knows plain words, numbers, white space and punctuation without asking
-/// every matcher.
-/// Neither may change a token. Each text here sits on the edge of a rule.
+/// every matcher. Neither may change a token. Each text here sits on the
+/// edge of a rule.
 #[test]
 fn shortcuts_and_hints_change_no_token() {
     let fast = Lexer::default();
@@ -768,7 +768,8 @@ fn an_override_cycle_names_only_the_matchers_in_the_circle() {
 fn long_runs_are_lexed_in_linear_time() {
     const UNITS: &[&str] = &[
         "-", "_", ".", ",", "+", "#", "@", "'", "/", " ", "$", "a.", "a-", "1.", "1 ", "a'", "a_",
-        "www.", "Feb ", "5 U", "1:", "a@", "é", "—", "。",
+        "www.", "Feb ", "5 U", "1:", "a@", "é", "—", "。", "1-", "1_", "1/", "1 -", "1,", "1a",
+        "1@", "é-", "é_", "é1", "é’", "a é", "1 P",
     ];
     let lexer = Lexer::default();
     for unit in UNITS {
