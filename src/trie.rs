@@ -113,6 +113,11 @@ impl Trie {
             .map(|i| children[i].1 as usize)
     }
 
+    /// True when a word starts with `first`.
+    pub fn can_start(&self, first: char) -> bool {
+        self.child(0, first).is_some()
+    }
+
     /// False when no word starts as `text` does, going by its first two
     /// bytes. Most text that is asked about holds no word, and this says so
     /// without a walk through the tree.
@@ -204,6 +209,7 @@ mod tests {
             assert_eq!(longest(&trie, text), expected, "{text:?}");
         }
         assert_eq!(longest(&Trie::from_words(["ab"]), "\u{D6}re"), None);
+        assert!(trie.can_start('K') && trie.can_start('\u{D6}') && !trie.can_start('r'));
     }
 
     #[test]

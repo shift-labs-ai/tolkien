@@ -1,17 +1,16 @@
 //! Matchers written as a user of the crate writes them, with its public
 //! interface only, and added to the built-in ones with [`Lexer::with`].
 //!
-//! They are the kind a detector of sensitive data needs. Each shows one
-//! thing a matcher of your own has to get right.
+//! They are the kind a detector of sensitive data needs. Each is written
+//! twice: by hand, which shows what a matcher of your own has to get right,
+//! and as a [`Pattern`], which says the same in data.
 
+use tolkien::chars::is_letter_or_digit;
+use tolkien::pattern::{Class, Pattern, Step};
 use tolkien::{matchers, Cursor, Lexer, Matcher, Trie};
 
 #[path = "support/reference.rs"]
 mod reference;
-
-fn is_letter_or_digit(c: char) -> bool {
-    c.is_alphanumeric()
-}
 
 /// 13 to 19 digits in groups joined by single spaces or dashes:
 /// `4111 1111 1111 1111`.
@@ -120,15 +119,71 @@ impl Matcher for Keyword {
     }
 }
 
+fn keywords() -> Trie {
+    Trie::from_words_in_common_cases(["confidential", "secret"])
+}
+
+/// The four matchers above, each said as a pattern.
+fn patterns() -> Vec<Pattern> {
+    let digit = || Class::range('0', '9');
+    let hex = || digit() | Class::range('a', 'f') | Class::range('A', 'F');
+    let letter_or_digit = || Class::letter() | Class::digit();
+    let part = || Step::number(3, 255);
+    let dot = || Step::text(".");
+    vec![
+        Pattern::new(
+            "CARD_NUMBER",
+            [
+                Step::run(digit()),
+                Step::repeat([Step::one(Class::chars(" -")), Step::run(digit())]),
+                Step::not(letter_or_digit()),
+            ],
+        )
+        .with_count(digit(), 13, 19),
+        Pattern::new(
+            "IPV4",
+            [
+                part(),
+                dot(),
+                part(),
+                dot(),
+                part(),
+                dot(),
+                part(),
+                Step::not_before([dot(), Step::one(digit())]),
+                Step::not(letter_or_digit()),
+            ],
+        ),
+        Pattern::new(
+            "MAC_ADDRESS",
+            [
+                Step::exactly(2, hex()),
+                Step::separator(Class::chars(":-")),
+                Step::exactly(2, hex()),
+                Step::same_separator(),
+                Step::exactly(2, hex()),
+                Step::same_separator(),
+                Step::exactly(2, hex()),
+                Step::same_separator(),
+                Step::exactly(2, hex()),
+                Step::same_separator(),
+                Step::exactly(2, hex()),
+                Step::not(letter_or_digit()),
+            ],
+        ),
+        Pattern::new(
+            "KEYWORD",
+            [Step::words(keywords()), Step::not(letter_or_digit())],
+        ),
+    ]
+}
+
 fn added() -> Vec<Box<dyn Matcher>> {
     vec![
         Box::new(CardNumber),
         Box::new(Ipv4),
         Box::new(MacAddress),
-        Box::new(Keyword(Trie::from_words_in_common_cases([
-            "confidential",
-            "secret",
-        ]))),
+        Box::new(Keyword(keywords())),
     ]
 }
 
@@ -321,6 +376,75 @@ fn a_lexer_with_added_matchers_gives_the_tokens_of_asking_every_matcher() {
     ] {
         check(&lexer, &all, text);
     }
+}
+
+/// Each pattern finds what the matcher written by hand finds, at every
+/// place of random text made of the pieces both are built from. It may say
+/// more exactly where it can start, as the keyword pattern does.
+#[test]
+fn a_pattern_says_what_the_matcher_written_by_hand_does() {
+    const PIECES: &[&str] = &[
+        "4111",
+        "1111",
+        "11",
+        "1",
+        "9",
+        "255",
+        "256",
+        "0",
+        ".",
+        ":",
+        "-",
+        " ",
+        "1d",
+        "d8",
+        "FF",
+        "fg",
+        "a",
+        "Z",
+        "secret",
+        "Secret",
+        "SECRET",
+        "secrets",
+        "confidential",
+        "é",
+        "٣",
+        "x",
+        "4111 1111 1111 111",
+        "10.0.0",
+        "1d:d8:97:09:54",
+        "1d-d8-97-09-54",
+    ];
+    let by_hand = added();
+    let patterns = patterns();
+    let mut state: u64 = 0xD1B5_4A32_D192_ED03;
+    let mut next = || {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) as usize
+    };
+    let mut matched = [0; 4];
+    for _ in 0..20_000 {
+        let text: String = (0..next() % 14)
+            .map(|_| PIECES[next() % PIECES.len()])
+            .collect();
+        for (at, _) in text.char_indices() {
+            for (index, (hand, pattern)) in by_hand.iter().zip(&patterns).enumerate() {
+                let rest = &text[at..];
+                assert_eq!(hand.kind(), pattern.kind());
+                assert_eq!(
+                    pattern.match_prefix(rest),
+                    hand.match_prefix(rest),
+                    "{} at {rest:?}",
+                    hand.kind()
+                );
+                matched[index] += usize::from(hand.match_prefix(rest).is_some());
+            }
+        }
+    }
+    // The random text holds tokens of every kind.
+    assert!(matched.iter().all(|&count| count > 50), "{matched:?}");
 }
 
 /// A matcher added to the built-in ones cannot take the kind of one.

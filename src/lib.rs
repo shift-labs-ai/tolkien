@@ -24,7 +24,8 @@
 //! - The tokens cover the whole text: every byte belongs to exactly one
 //!   token.
 //!
-//! The built-in matchers are in [`matchers`]. Write your own by implementing
+//! The built-in matchers are in [`matchers`]. Add your own with
+//! [`Lexer::with`]: describe it as a [`pattern::Pattern`], or implement
 //! [`Matcher`].
 
 #![deny(clippy::all)]
@@ -35,6 +36,7 @@ mod cursor;
 mod lexer;
 mod matcher;
 pub mod matchers;
+pub mod pattern;
 mod shortcuts;
 mod trie;
 // Generated: its layout is the generator's.

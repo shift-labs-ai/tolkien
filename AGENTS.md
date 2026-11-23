@@ -34,6 +34,8 @@ there.
   numbers, white space and punctuation without asking every matcher
 - `src/matchers/`: one file per built-in matcher; `mod.rs` holds `all()`,
   the default order
+- `src/pattern.rs`: `Pattern`, a matcher built from a list of `Step`s over
+  `Class`es of characters: matchers as data, for users and for bindings
 - `src/trie.rs`: `Trie`, longest-word lookup for month and currency names
 - `src/chars.rs`: character class functions over the generated tables
 - `src/unicode_tables.rs`: generated, never edited
@@ -45,8 +47,9 @@ there.
 - `tests/support/reference.rs`: the plain way to lex, every matcher asked
   at every position; the tests and the fuzzer both include it and compare
   the lexer with it
-- `tests/custom.rs`: matchers written as a user writes them and added with
-  `Lexer::with`, compared with asking every matcher
+- `tests/custom.rs`: matchers written as a user writes them, by hand and
+  as patterns, added with `Lexer::with` and compared with asking every
+  matcher and with each other
 - `tests/cli.rs`: tests of the command
 - `tools/verify.sh`: every check, for CI and for a person
 - `examples/fuzz.rs`: the fuzzer; its `shape` function states every kind's
@@ -89,6 +92,11 @@ there.
   public interface only and is the worked example; keep it compiling when
   that interface changes, and add to it what a new building block makes
   possible.
+- **A pattern step is a cursor method.** `pattern.rs` adds no way of
+  reading text: each `Step` does what a matcher written by hand does with
+  one `Cursor` call or a short loop of them. A new step gets its rule for
+  `can_start` in `Step::start`, which may say too much but never too
+  little, and a line in `a_pattern_can_start_where_its_first_steps_can`.
 - **Coverage.** The tokens of a text cover it with no gaps. `tests/lexer.rs`
   checks this on fixed and on random text; keep both passing.
 - **Character sets are generated.** To change one, change its rule in

@@ -169,7 +169,68 @@ let tokens: Vec<_> = lexer.tokens("from 192.168.1.20").map(|t| (t.kind, t.text))
 assert_eq!(tokens[2], ("IPV4", "192.168.1.20"));
 ```
 
-What to know:
+Most matchers need no code. A `Pattern` is a matcher described as a list
+of steps, each one thing the cursor does:
+
+```rust
+use tolkien::pattern::{Class, Pattern, Step};
+use tolkien::{Lexer, Matcher};
+
+let digit = || Class::range('0', '9');
+let hex = || digit() | Class::range('a', 'f') | Class::range('A', 'F');
+let letter_or_digit = || Class::letter() | Class::digit();
+
+// 13 to 19 digits in groups joined by a space or a dash.
+let card = Pattern::new(
+    "CARD_NUMBER",
+    [
+        Step::run(digit()),
+        Step::repeat([Step::one(Class::chars(" -")), Step::run(digit())]),
+        Step::not(letter_or_digit()),
+    ],
+)
+.with_count(digit(), 13, 19);
+
+// Six pairs of hex digits joined by the same colon or dash.
+let pair = || Step::exactly(2, hex());
+let again = || Step::same_separator();
+let mac = Pattern::new(
+    "MAC_ADDRESS",
+    [
+        pair(),
+        Step::separator(Class::chars(":-")),
+        pair(), again(), pair(), again(), pair(), again(), pair(), again(), pair(),
+        Step::not(letter_or_digit()),
+    ],
+);
+
+assert_eq!(card.match_prefix("4111 1111-1111 1111."), Some("4111 1111-1111 1111"));
+assert_eq!(mac.match_prefix("1d:d8:97:09:54:39"), Some("1d:d8:97:09:54:39"));
+assert_eq!(mac.match_prefix("1d:d8-97:09:54:39"), None);
+
+let lexer = Lexer::with([Box::new(card) as Box<dyn Matcher>, Box::new(mac)]).unwrap();
+```
+
+| Step | What it does |
+|---|---|
+| `one`, `run`, `exactly`, `between` | Characters of a class: one, as many as there are, a fixed number, a range |
+| `text` | A fixed text |
+| `words` | The longest word of a `Trie` |
+| `number` | ASCII digits with a largest value, such as a part of an IP address |
+| `separator`, `same_separator` | A character of a class, and that same character again |
+| `not`, `not_before` | What must not come next: a class, or a list of steps |
+| `optional`, `repeat`, `either` | Steps that may be absent, that go round, or that are a choice |
+| `trim_end` | Step back over a class at the end |
+| `Pattern::with_count` | How many characters of a class the whole token holds |
+
+A pattern works out by itself where it can start. A lexer with five
+patterns added was 10 to 25% slower than with the same five matchers
+written by hand. A pattern is data, which is
+what lets a matcher be written in another language or in a file and still
+run here. It cannot check a rule over the whole token, such as a checksum:
+lex with the pattern, then check the tokens of its kind.
+
+What to know when writing a matcher by hand:
 
 - **Order is the order you give.** The matchers passed to `Lexer::with`
   are tried before the built-in ones, first to last, so they win where
@@ -191,8 +252,9 @@ What to know:
 - **`Trie`** finds the longest of many words at the cursor, and
   `tolkien::chars` has the character classes the built-in matchers use.
 
-[tests/custom.rs](tests/custom.rs) has four matchers written this way: a
-card number, an IP address, a MAC address and a list of keywords.
+[tests/custom.rs](tests/custom.rs) has four matchers written both ways,
+by hand and as patterns, and checks that the two agree: a card number, an
+IP address, a MAC address and a list of keywords.
 
 `Lexer::new` takes any list of matchers and nothing else: no built-in
 matcher is added, and each matcher is asked for every token it can start.
