@@ -19,14 +19,15 @@
 //!   recogniser that reads characters from a [`Cursor`]. There are no regular
 //!   expressions.
 //! - A [`Lexer`] holds an ordered list of matchers. At each position it takes
-//!   the first one that matches. A matcher declares which kinds it
-//!   [overrides](Matcher::overrides), and that decides the order.
+//!   the first one that matches. The order is the order they are given in,
+//!   and a matcher that [overrides](Matcher::overrides) another moves up to
+//!   stand before it.
 //! - The tokens cover the whole text: every byte belongs to exactly one
 //!   token.
 //!
-//! The built-in matchers are in [`matchers`]. Add your own with
-//! [`Lexer::with`]: describe it as a [`pattern::Pattern`], or implement
-//! [`Matcher`].
+//! The built-in matchers are in [`matchers`], and more are in the
+//! [`catalog`]. Add your own with [`Lexer::with`]: describe it as a
+//! [`pattern::Pattern`], or implement [`Matcher`].
 
 #![deny(clippy::all)]
 #![warn(missing_docs)]

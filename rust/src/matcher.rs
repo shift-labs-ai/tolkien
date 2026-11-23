@@ -89,6 +89,17 @@ pub(crate) fn match_at<M: Matcher + ?Sized>(
     (matcher.matches(&mut cur) && cur.pos() > start).then(|| cur.pos())
 }
 
+/// The kind and the end of the token that starts at byte offset `start` of
+/// `text`, if `matcher` finds one.
+#[inline]
+pub(crate) fn ask<M: Matcher + ?Sized>(
+    matcher: &M,
+    text: &str,
+    start: usize,
+) -> Option<(&'static str, usize)> {
+    match_at(matcher, text, start).map(|end| (matcher.kind(), end))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

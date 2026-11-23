@@ -740,7 +740,7 @@ const ENTRIES: &[Entry] = &[
             )
         },
     },
-    // Technical.
+    // Technical, and the address that starts as a hex number does.
     Entry {
         kind: UUID,
         group: Group::Technical,

@@ -184,9 +184,9 @@ What to know:
   table within a group and with the more specific first where two could
   take the same text: an IMEI and an ISBN before a card number, a social
   security number before a telephone number.
-- **They check shape.** A `CARD_NUMBER` has the digits of a card number;
-  whether its checksum holds is a check of your own on the token. So does
-  any 16-digit number.
+- **They check shape.** A `CARD_NUMBER` has the digits of a card number,
+  and so has any number of 16 digits; whether its checksum holds is a check
+  of your own on the token.
 - **A few shapes are shared.** `#decade` is a `HEX_COLOR`, `$HOME` a
   `CASHTAG`, `2E18` a `SCIENTIFIC_NUMBER`, and a date without a year such
   as `1/20` a `FRACTION`. Take the kinds you need.
@@ -346,10 +346,10 @@ Bound what a pattern reads. `repeat` takes the largest number of rounds
 for that reason: a card number of any number of groups reads a whole
 column of numbers, fails, and reads it again from the next number.
 
-A pattern is data, which is
-what lets a matcher be written in another language or in a file and still
-run here. It cannot check a rule over the whole token, such as a checksum:
-lex with the pattern, then check the tokens of its kind.
+A pattern is data, which is what lets a matcher be written in another
+language or in a file and still run here. It cannot check a rule over the
+whole token, such as a checksum: lex with the pattern, then check the
+tokens of its kind.
 
 What to know when writing a matcher by hand:
 
@@ -360,9 +360,9 @@ What to know when writing a matcher by hand:
   it, and no other matcher changes place.
 - **`can_start` is a rule, not a hint.** The matcher is asked only where it
   answers `true`, by the lexer and by `match_prefix` alike. It is also
-  what keeps the lexer fast: with five added matchers that say where they
-  start, the texts of the table below lex at 300 to 370 MB/s; with one
-  more that can start anywhere, at 140 to 210 MB/s.
+  what keeps the lexer fast: an added matcher costs where it can start, and
+  everywhere else the lexer is the default one. A matcher that can start
+  with any letter is asked at every word.
 - **The cursor reads forward.** `peek`, `advance_if`, `advance_while`,
   `advance_exactly` and `advance_str` move it; `followed_by` looks two
   characters ahead without moving; `back_while` steps back over
@@ -544,8 +544,8 @@ The design is the same. These behaviours changed:
 | `CURRENCY` names | Codes and abbreviations matched in any case (`5 km`, `5 all`); a name could be followed by a digit or an apostrophe (`94 won't`) | Names in their common cases, codes and abbreviations only as written; no letter, digit or apostrophe after the name |
 | Currency list | Included the region names Abkhazia and Artsakh | Without them |
 | Time to lex | Quadratic on a long run of dashes, dots or underscores | Linear |
-| `PHONE_NUMBER` | A stub that never matched | Not ported |
-| Matcher options | Character sets passed to the constructor | None yet: the matchers are fixed |
+| `PHONE_NUMBER` | A stub that never matched | In [the catalog](#the-catalog), with rules of its own |
+| Matcher options | Character sets passed to the constructor | None: the built-in matchers are fixed, and a `Pattern` is the way to a matcher with other sets |
 
 Generating the character sets changed their members:
 

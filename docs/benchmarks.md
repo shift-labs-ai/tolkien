@@ -57,9 +57,10 @@ carry a magnitude letter (`0.6m`, `998k`) or a currency code in front
 
 ## Labels made of digits
 
-No matcher is aimed at these. They count because a detector for card
-numbers or IP addresses will be built on the tokens. Share that is exactly
-one token:
+No built-in matcher is aimed at these; the catalog has matchers for most
+of them, scored further down. They count because a detector for card
+numbers or IP addresses is built on the tokens. Share that is exactly one
+token with the default lexer:
 
 | Label | Spans | Before | After |
 |---|---:|---:|---:|
@@ -172,14 +173,15 @@ what people had labelled.
 
 ## Decisions these numbers ask for
 
-Each is a new rule or a new matcher, not a repair, so none was made here.
+Each is a new rule or a new matcher, not a repair. The catalog answers
+three of them and leaves the default lexer as it was; the others are open.
 
 | Gap | Size | What it would take |
 |---|---|---|
 | Dates without a year or a day | 32% of ai4privacy dates, about 9% of TAB's | Accept `30 January`, `20th September`, `March 2006`. fastlex rejected these on purpose. `1/20` cannot be told from a fraction |
-| Phone numbers | 62% are several tokens | A matcher: digits in groups, with `+`, brackets, spaces and dashes |
-| SSNs with spaces | 23% are three tokens | The same kind of matcher, or leave it to the detector |
-| IPv6 and MAC addresses | 0% are one token; a MAC tail reads as a `TIME` | Two matchers. They would also end the `TIME` false positives |
+| Phone numbers | 62% are several tokens | Answered by the catalog's `PHONE_NUMBER`: 91.3% are one token |
+| SSNs with spaces | 23% are three tokens | Answered by the catalog's `US_SSN` for the United States form |
+| IPv6 and MAC addresses | 0% are one token; a MAC tail reads as a `TIME` | Answered by the catalog's `IPV6` and `MAC_ADDRESS`, which also take the tail from `TIME` |
 | Amounts with a magnitude or a leading code | more than half of ai4privacy amounts | `$5k`, `0.6m`; `USD 5`, `Rp 500`. A leading code brings back collisions (`K9`, `R2`) |
 | Possessives | 4.5% of first names are `Abby's` | Cut `'s` off a word, or leave it to the consumer |
 | `para`, `K` and other currency words | 45 of 71 stray `CURRENCY` tokens in TAB | Prune the currency list to names nobody uses as words |

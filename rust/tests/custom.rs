@@ -110,7 +110,7 @@ impl Matcher for MacAddress {
 /// A word from a list, in the case it is written in or in a common one.
 ///
 /// A matcher may hold data. This one does not say where it can start, so it
-/// is asked at every character, and the lexer is slower for it.
+/// is asked at every token, and the lexer is slower for it.
 struct Keyword(Trie);
 
 impl Matcher for Keyword {

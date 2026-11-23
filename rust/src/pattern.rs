@@ -5,7 +5,7 @@
 //! [`Cursor`]: take a character of a class, take a run of them, take a
 //! fixed text, look at what comes next, step back. It needs no code, so it
 //! can be written in a configuration file or in another language and still
-//! run as fast as the matchers here.
+//! run here, in the lexer's loop.
 //!
 //! ```
 //! use tolkien::pattern::{Class, Pattern, Step};
@@ -483,7 +483,21 @@ fn start(steps: &[Step], first: First) -> Start {
 /// Every ASCII character.
 const ANY: u128 = u128::MAX;
 
-/// The fewest characters `steps` take when they succeed.
+/// True when `step` steps back, or holds a step that does.
+fn steps_back(step: &Step) -> bool {
+    match &step.0 {
+        Kind::TrimEnd(_) => true,
+        Kind::NotBefore(steps) | Kind::Optional(steps) | Kind::Repeat { steps, .. } => {
+            steps.iter().any(steps_back)
+        }
+        Kind::Either(choices) => choices.iter().flatten().any(steps_back),
+        _ => false,
+    }
+}
+
+/// The fewest characters of the text `steps` read when they succeed. The
+/// steps after one that steps back are not counted: they may take again
+/// what it gave back.
 fn shortest(steps: &[Step]) -> usize {
     let of = |step: &Step| match &step.0 {
         Kind::Run { min, .. } => *min,
@@ -500,7 +514,8 @@ fn shortest(steps: &[Step]) -> usize {
         | Kind::Repeat { .. }
         | Kind::TrimEnd(_) => 0,
     };
-    steps
+    let counted = steps.iter().position(steps_back).unwrap_or(steps.len());
+    steps[..counted]
         .iter()
         .fold(0usize, |sum, step| sum.saturating_add(of(step)))
 }
@@ -945,6 +960,18 @@ mod tests {
         // Words may hold any character, so only the fixed places are tested.
         let words = || Step::words(Trie::from_words(["ab"]));
         assert_eq!(lengths(vec![text("x"), words(), text("yz")]), 1);
+
+        // What a step gives back, the next may take again: `a.` is read
+        // once, and the token is no longer than the run before the step.
+        let trim = || Step::trim_end(Class::chars("."));
+        let run = || Step::run(Class::chars("a."));
+        assert_eq!(lengths(vec![run(), trim(), text(".")]), 1);
+        let again = Pattern::new("AGAIN", [run(), trim(), text(".")]);
+        assert_eq!(again.match_prefix("a."), Some("a."));
+        assert_eq!(again.match_prefix("."), Some("."));
+        assert_eq!(again.match_prefix("a.. "), Some("a."));
+        let inside = vec![run(), Step::optional([text("-"), trim()]), text(".")];
+        assert_eq!(lengths(inside), 1);
     }
 
     #[test]

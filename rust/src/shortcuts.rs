@@ -16,7 +16,7 @@
 
 use crate::chars::{ascii_classes, classes, NUMBER_PUNCTUATION, WORD_TERMINATION};
 use crate::cursor::Cursor;
-use crate::matcher::{match_at, Matcher};
+use crate::matcher::{ask, Matcher};
 use crate::matchers::{
     has_url_prefix, is_email_local_byte, local_part, month_may_follow, name_after_amount,
     starts_with_month, AlphaNumericSequence, Date, Iso8601, LikeEmail, LikeNumber, LikeUrl, Time,
@@ -199,16 +199,6 @@ fn after_letters(text: &str, at: usize) -> After {
             }
         }
     }
-}
-
-/// The token `matcher` finds at byte offset `start` of `text`.
-#[inline]
-fn ask<M: Matcher + ?Sized>(
-    matcher: &M,
-    text: &str,
-    start: usize,
-) -> Option<(&'static str, usize)> {
-    match_at(matcher, text, start).map(|end| (matcher.kind(), end))
 }
 
 /// The token at byte offset `start` of `text`, which starts with `len`

@@ -3,7 +3,7 @@
 use std::fmt;
 use std::iter::FusedIterator;
 
-use crate::matcher::{match_at, Matcher};
+use crate::matcher::{ask, Matcher};
 use crate::matchers;
 use crate::shortcuts;
 
@@ -223,20 +223,16 @@ impl Lexer {
         first: char,
         from: usize,
     ) -> (&'static str, usize) {
-        let attempt = |matcher: &dyn Matcher| {
-            let end = match_at(matcher, text, start)?;
-            Some((matcher.kind(), end))
-        };
         let found = if first.is_ascii() {
             self.candidates_at(first)
                 .iter()
                 .filter(|&&index| index as usize >= from)
-                .find_map(|&index| attempt(self.matchers[index as usize].as_ref()))
+                .find_map(|&index| ask(self.matchers[index as usize].as_ref(), text, start))
         } else {
             self.matchers[from..]
                 .iter()
                 .filter(|matcher| matcher.can_start(first))
-                .find_map(|matcher| attempt(matcher.as_ref()))
+                .find_map(|matcher| ask(matcher.as_ref(), text, start))
         };
         found.unwrap_or((OTHER, start + first.len_utf8()))
     }
@@ -259,22 +255,18 @@ impl Lexer {
             Some(0) | None => return self.token_at(text, start, first, 0),
             Some(added) => added,
         };
-        let attempt = |matcher: &dyn Matcher| {
-            let end = match_at(matcher, text, start)?;
-            Some((matcher.kind(), end))
-        };
         let found = if first.is_ascii() {
             // The matchers that can start here are listed in the order
             // they are tried, so the added ones stand first in the list.
             self.candidates_at(first)
                 .iter()
                 .take_while(|&&index| (index as usize) < added)
-                .find_map(|&index| attempt(self.matchers[index as usize].as_ref()))
+                .find_map(|&index| ask(self.matchers[index as usize].as_ref(), text, start))
         } else {
             self.matchers[..added]
                 .iter()
                 .filter(|matcher| matcher.can_start(first))
-                .find_map(|matcher| attempt(matcher.as_ref()))
+                .find_map(|matcher| ask(matcher.as_ref(), text, start))
         };
         found
             .or_else(|| shortcuts::token(text, start))

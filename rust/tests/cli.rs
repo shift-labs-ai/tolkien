@@ -45,6 +45,23 @@ fn reads_standard_input_and_skips_space() {
 }
 
 #[test]
+fn adds_the_catalog_when_asked() {
+    let plain = tolkien(&["-s", "ping 192.168.1.20"], "");
+    assert_eq!(
+        stdout(&plain),
+        "WORD\t0\t4\t\"ping\"\nLIKE_NUMBER\t5\t17\t\"192.168.1.20\"\n"
+    );
+    for flag in ["-c", "--catalog"] {
+        let output = tolkien(&[flag, "-s", "ping 192.168.1.20"], "");
+        assert!(output.status.success());
+        assert_eq!(
+            stdout(&output),
+            "WORD\t0\t4\t\"ping\"\nIPV4\t5\t17\t\"192.168.1.20\"\n"
+        );
+    }
+}
+
+#[test]
 fn takes_text_after_a_double_dash_as_it_is() {
     let output = tolkien(&["--", "--skip-space"], "");
     assert!(output.status.success());

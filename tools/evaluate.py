@@ -10,12 +10,15 @@ asks how the lexer cut the text there:
   ragged   a token crosses the start or the end of the span
 
 and, for the labels a matcher exists for, whether an exact token has the
-expected kind. The labels no matcher exists for (phone numbers, card
-numbers) are reported too: how they are cut today is what a detector built
-on these tokens has to work with.
+expected kind. The labels no matcher exists for are reported too: how they
+are cut is what a detector built on these tokens has to work with. With
+--catalog the lexer has every matcher of the catalog as well, and the
+labels those cover (phone numbers, card numbers, addresses) are scored
+against their kinds.
 
 Usage:
   python3 tools/evaluate.py                    every corpus, a summary table
+  python3 tools/evaluate.py --catalog          the same, with the catalog
   python3 tools/evaluate.py -l DATE -n 30      thirty misses of one label
   python3 tools/evaluate.py --stray DATE       tokens of a kind outside every
                                                span that expects that kind

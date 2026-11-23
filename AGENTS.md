@@ -37,7 +37,8 @@ bun test                    # the Node package, and the wasm package against it
 ## Architecture
 
 - `rust/src/cursor.rs`: `Cursor`, a byte position in a `&str` that matchers move
-- `rust/src/matcher.rs`: the `Matcher` trait (`kind`, `overrides`, `matches`)
+- `rust/src/matcher.rs`: the `Matcher` trait (`kind`, `overrides`,
+  `can_start`, `matches`)
 - `rust/src/lexer.rs`: `Lexer` (orders the matchers, runs them, also on several
   threads; `new` for any matchers, `with` for the built-in ones and more),
   `Token`, `Error`
@@ -165,9 +166,9 @@ bun test                    # the Node package, and the wasm package against it
   generated lookup table for all character classes (`chars.rs`),
   `Matcher::can_start` so that a matcher is asked only where it can start,
   and `shortcuts.rs` for the default lexer. The last two restate what the
-  matchers do. `can_start` must be true for the first character of anything
-  `matches` accepts, and a shortcut must answer what the matchers, asked in
-  order, would. Both are compared with asking every matcher at every
+  matchers do. `can_start` decides where a matcher is asked, so it must be
+  true for the first character of every token the matcher is to find, and
+  a shortcut must answer what the matchers, asked in order, would. Both are compared with asking every matcher at every
   position: `shortcuts_and_hints_change_no_token` and the random-text test
   in `rust/tests/lexer.rs`, and the fuzzer's `reference` check. **A new matcher,
   or a matcher that takes a new first character or a new kind of text, has

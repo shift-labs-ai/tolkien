@@ -1,9 +1,10 @@
-//! Measures how fast the default lexer reads a file: on one thread, counting
+//! Measures how fast the lexer reads a file: on one thread, counting
 //! the tokens as they come, and on every core, collecting them.
 //!
 //!     cargo run --release --example throughput -- FILE [ROUNDS] [catalog]
 //!
-//! With `catalog`, every matcher of the catalog is added to the lexer.
+//! The lexer is the default one, or with `catalog` the default one and
+//! every matcher of the catalog.
 
 use std::time::Instant;
 
