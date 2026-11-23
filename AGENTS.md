@@ -41,6 +41,9 @@ there.
 - `docs/charsets.md`: generated listing of every named set, for review
 - `src/main.rs`: the `tolkien` command
 - `tests/lexer.rs`: tests of the lexer as a whole
+- `tests/support/reference.rs`: the plain way to lex, every matcher asked
+  at every position; the tests and the fuzzer both include it and compare
+  the lexer with it
 - `tests/cli.rs`: tests of the command
 - `tools/verify.sh`: every check, for CI and for a person
 - `examples/fuzz.rs`: the fuzzer; its `shape` function states every kind's

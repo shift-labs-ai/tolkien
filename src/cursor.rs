@@ -74,8 +74,14 @@ impl<'t> Cursor<'t> {
     /// [`pos`](Cursor::pos), up to the cursor.
     ///
     /// # Panics
-    /// If `start` is after the cursor or not on a character boundary.
+    /// If `start` is after the cursor, before the place the cursor was
+    /// created at, or not on a character boundary.
     pub fn since(&self, start: usize) -> &'t str {
+        assert!(
+            start >= self.start,
+            "position {start} is before {}, where the cursor was created",
+            self.start
+        );
         &self.text[start..self.pos]
     }
 
@@ -274,6 +280,12 @@ mod tests {
         assert_eq!(cur.prev(), Some('.'));
         assert_eq!(cur.back_while(|_| true), 1);
         assert_eq!(cur.pos(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "position 1 is before 2")]
+    fn since_rejects_a_position_before_the_start() {
+        Cursor::at("ab.c", 2).since(1);
     }
 
     #[test]

@@ -4,6 +4,9 @@
 use tolkien::matchers::{self, LikeNumber, Word, DIGIT, LETTER, LIKE_NUMBER};
 use tolkien::{Cursor, Error, Lexer, Matcher, Token, OTHER};
 
+#[path = "support/reference.rs"]
+mod reference;
+
 fn kinds_and_texts<'t>(lexer: &Lexer, text: &'t str) -> Vec<(&'static str, &'t str)> {
     lexer.tokens(text).map(|t| (t.kind, t.text)).collect()
 }
@@ -154,23 +157,10 @@ fn tokens_cover_random_text() {
     }
 }
 
-/// The tokens of `text` found by asking every built-in matcher at every
-/// position, in the default order: what the default lexer must give, however
-/// it gets there.
+/// What the default lexer must give for `text`: the built-in matchers, each
+/// asked at every position, in the default order.
 fn reference(text: &str) -> Vec<(&'static str, usize, usize)> {
-    let matchers = matchers::all();
-    let mut tokens = Vec::new();
-    let mut pos = 0;
-    while pos < text.len() {
-        let rest = &text[pos..];
-        let (kind, len) = matchers
-            .iter()
-            .find_map(|matcher| Some((matcher.kind(), matcher.match_prefix(rest)?.len())))
-            .unwrap_or_else(|| (OTHER, rest.chars().next().map_or(0, char::len_utf8)));
-        tokens.push((kind, pos, pos + len));
-        pos += len;
-    }
-    tokens
+    reference::tokens(&matchers::all(), text)
 }
 
 fn spans(lexer: &Lexer, text: &str) -> Vec<(&'static str, usize, usize)> {

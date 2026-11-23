@@ -38,6 +38,9 @@ use tolkien::chars::*;
 use tolkien::matchers::*;
 use tolkien::{Lexer, Matcher, Token, OTHER};
 
+#[path = "../tests/support/reference.rs"]
+mod reference;
+
 /// A broken check: which one, on which kind of token, and what was seen.
 struct Finding {
     check: &'static str,
@@ -56,36 +59,6 @@ impl Checker {
             lexer: Lexer::default(),
             matchers: all(),
         }
-    }
-
-    /// The first token of `tokens` that is not the one found by asking every
-    /// matcher at its position, in the lexer's order: its kind, and both
-    /// tokens as text.
-    fn differs_from_reference(
-        &self,
-        text: &str,
-        tokens: &[Token<'_>],
-    ) -> Option<(&'static str, String)> {
-        let mut pos = 0;
-        for token in tokens {
-            let rest = &text[pos..];
-            let (kind, len) = self
-                .matchers
-                .iter()
-                .find_map(|matcher| Some((matcher.kind(), matcher.match_prefix(rest)?.len())))
-                .unwrap_or_else(|| (OTHER, rest.chars().next().map_or(0, char::len_utf8)));
-            if (token.kind, token.start, token.end) != (kind, pos, pos + len) {
-                let detail = format!(
-                    "{} {:?} where the matchers give {kind} {:?}",
-                    token.kind,
-                    token.text,
-                    &rest[..len]
-                );
-                return Some((token.kind, detail));
-            }
-            pos += len;
-        }
-        None
     }
 
     /// The first broken check of `text`, if there is one. `rng` picks the
@@ -116,12 +89,22 @@ impl Checker {
             });
         }
 
-        if let Some(detail) = self.differs_from_reference(text, &tokens) {
-            let kind = detail.0;
+        // Both cover the text, so they differ in a token if they differ at all.
+        let expected = reference::tokens(&self.matchers, text);
+        let differs = |(ours, theirs): &(&Token<'_>, &(&str, usize, usize))| {
+            (ours.kind, ours.start, ours.end) != **theirs
+        };
+        if let Some((ours, &(kind, start, end))) = tokens.iter().zip(&expected).find(differs) {
+            let detail = format!(
+                "{} {:?} where the matchers give {kind} {:?}",
+                ours.kind,
+                ours.text,
+                &text[start..end]
+            );
             return Some(Finding {
                 check: "reference",
-                kind,
-                detail: detail.1,
+                kind: ours.kind,
+                detail,
             });
         }
 
@@ -226,16 +209,6 @@ impl Checker {
         }
         None
     }
-}
-
-fn is_number_punctuation(c: char) -> bool {
-    is_full_stop(c)
-        || is_comma(c)
-        || is_percent_sign(c)
-        || is_number_sign(c)
-        || is_math_symbol(c)
-        || is_dash_punctuation(c)
-        || is_connector_punctuation(c)
 }
 
 fn is_date_separator(c: char) -> bool {

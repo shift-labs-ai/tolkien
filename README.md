@@ -110,9 +110,11 @@ cargo build --release && python3 tools/evaluate.py                # labelled spa
 
 - **`examples/fuzz.rs`** lexes every document, then mutates documents at
   random, and checks properties that must hold for any text: the tokens
-  cover it, every token has the form its kind documents, a token on its own
-  is the same token, a token does not depend on what stands before it, and
-  the time is in proportion to the length. A failing text is cut down and
+  cover it, they are the tokens of asking every matcher at every position,
+  they are the same when the text is lexed in pieces on several threads,
+  every token has the form its kind documents, a token on its own is the
+  same token, a token does not depend on what stands before it, and the
+  time is in proportion to the length. A failing text is cut down and
   printed.
 - **`tools/evaluate.py`** compares the tokens with the spans people labelled
   in two datasets: is an email address, a date or a card number one token,
@@ -181,13 +183,16 @@ With every built-in matcher, on an Apple M5 laptop with ten cores:
 
 | Text | Size | One thread | Every core, collected |
 |---|---:|---:|---:|
-| Court cases (TAB) | 0.7 MB | 506 MB/s | 686 MB/s |
-| Sentences with personal data (ai4privacy, English) | 7.6 MB | 374 MB/s | 1,015 MB/s |
-| Documents converted to markdown | 0.6 MB | 341 MB/s | |
-| Wikipedia in 24 languages and scripts | 2.9 MB | 343 MB/s | 1,014 MB/s |
+| Court cases (TAB) | 0.7 MB | 495 MB/s | 500 to 800 MB/s |
+| Sentences with personal data (ai4privacy, English) | 7.6 MB | 365 MB/s | 1,000 MB/s |
+| Documents converted to markdown | 0.6 MB | 335 MB/s | 420 MB/s |
+| Wikipedia in 24 languages and scripts | 2.9 MB | 340 MB/s | 1,000 MB/s |
 
-That is 120 to 170 million tokens a second on one thread. The slowest input
-measured is a long run of single digits and spaces, at about 50 MB/s.
+That is 80 to 170 million tokens a second on one thread. The figures are the
+best of 40 runs and move by a few percent between runs; on every core, the
+two small files move much more, because starting the threads is a large
+part of a millisecond. The slowest input measured is a long run of single
+digits and spaces, at about 50 MB/s on one thread.
 
 ```bash
 cargo run --release --example throughput -- FILE

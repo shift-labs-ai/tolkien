@@ -228,10 +228,7 @@ impl Matcher for Date {
     }
 
     fn can_start(&self, first: char) -> bool {
-        first.is_ascii_digit()
-            || MONTH_NAMES
-                .iter()
-                .any(|name| name.starts_with(first.to_ascii_uppercase()))
+        first.is_ascii_digit() || (first.is_ascii() && MONTH_LETTERS[first as usize] & 1 != 0)
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {

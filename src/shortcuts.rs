@@ -74,8 +74,8 @@ const BYTES: [Byte; 256] = {
 };
 
 /// True for the ASCII marks that only `Symbol` starts with: not a mark a
-/// number starts with (`. , - _ + %` and the like), not a currency sign, and
-/// not the `#` of a hashtag or the `@` of a mention.
+/// number starts with (`. , - _ + % #` and the like, of which `#` starts a
+/// hashtag too), not a currency sign, and not the `@` of a mention.
 const ONLY_A_SYMBOL: [bool; 128] = {
     let mut only = [false; 128];
     let mut byte = 0;
@@ -86,7 +86,7 @@ const ONLY_A_SYMBOL: [bool; 128] = {
             | tables::WHITE_SPACE
             | tables::CURRENCY_SYMBOL
             | NUMBER_PUNCTUATION;
-        only[byte] = classes & alone == 0 && byte != b'#' as usize && byte != b'@' as usize;
+        only[byte] = classes & alone == 0 && byte != b'@' as usize;
         byte += 1;
     }
     only
@@ -241,5 +241,40 @@ pub(crate) fn token(text: &str, start: usize) -> Option<(&'static str, usize)> {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The eight-bytes-at-a-time count against the plain one, with every
+    /// byte value at every place of a chunk and of the tail after it.
+    #[test]
+    fn letters_counts_like_a_loop_over_the_bytes() {
+        let plain = |bytes: &[u8]| bytes.iter().take_while(|b| b.is_ascii_alphabetic()).count();
+        for len in 0..20 {
+            let mut bytes = vec![b'a'; len];
+            assert_eq!(letters(&bytes), len, "{len} letters");
+            for at in 0..len {
+                for byte in 0..=255 {
+                    bytes[at] = byte;
+                    assert_eq!(
+                        letters(&bytes),
+                        plain(&bytes),
+                        "{byte:#04x} at {at} of {len}"
+                    );
+                }
+                bytes[at] = b'Z';
+            }
+        }
+    }
+
+    #[test]
+    fn a_shortcut_starts_at_the_given_place() {
+        assert_eq!(token("12 word.", 3), Some((WORD, 7)));
+        assert_eq!(token("12 word.", 2), Some((WHITE_SPACE, 3)));
+        assert_eq!(token("12 word.", 7), Some((SYMBOL, 8)));
+        assert_eq!(token("12 word.", 0), None);
     }
 }

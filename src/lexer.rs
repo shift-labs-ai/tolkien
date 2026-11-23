@@ -119,7 +119,7 @@ impl Lexer {
             starts[ascii as usize] = candidates.len() as u32;
             for (index, matcher) in matchers.iter().enumerate() {
                 if matcher.can_start(ascii as char) {
-                    candidates.push(index as u16);
+                    candidates.push(u16::try_from(index).expect("fewer than 65,536 matchers"));
                 }
             }
         }
@@ -186,7 +186,8 @@ impl Lexer {
         self.tokens_parallel_on(text, cores.min(text.len() / WORTH_A_THREAD))
     }
 
-    /// All the tokens of `text`, lexed on `threads` threads.
+    /// All the tokens of `text`, lexed on `threads` threads: one is started
+    /// for every piece but the first, however many are asked for.
     ///
     /// The text is cut into `threads` pieces of the same length. A cut
     /// rarely falls between two tokens, so each thread starts at its cut and
