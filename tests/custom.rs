@@ -12,12 +12,13 @@ use tolkien::{matchers, Cursor, Lexer, Matcher, Trie};
 #[path = "support/reference.rs"]
 mod reference;
 
-/// 13 to 19 digits in groups joined by single spaces or dashes:
-/// `4111 1111 1111 1111`.
+/// 13 to 19 digits in at most eight groups joined by single spaces or
+/// dashes: `4111 1111 1111 1111`.
 ///
 /// It says where it can start, so the lexer asks it only at a digit. A
 /// separator is taken only when a digit follows it, so the token does not
-/// end with one.
+/// end with one. The number of groups is bounded: without that it reads a
+/// whole column of numbers, fails, and reads it again from the next one.
 struct CardNumber;
 
 impl Matcher for CardNumber {
@@ -34,7 +35,10 @@ impl Matcher for CardNumber {
         if digits == 0 {
             return false;
         }
-        while cur.followed_by(|c| c == ' ' || c == '-', |c| c.is_ascii_digit()) {
+        for _ in 0..7 {
+            if !cur.followed_by(|c| c == ' ' || c == '-', |c| c.is_ascii_digit()) {
+                break;
+            }
             cur.advance();
             digits += cur.advance_while(|c| c.is_ascii_digit());
         }
@@ -135,7 +139,7 @@ fn patterns() -> Vec<Pattern> {
             "CARD_NUMBER",
             [
                 Step::run(digit()),
-                Step::repeat([Step::one(Class::chars(" -")), Step::run(digit())]),
+                Step::repeat(7, [Step::one(Class::chars(" -")), Step::run(digit())]),
                 Step::not(letter_or_digit()),
             ],
         )
@@ -445,6 +449,37 @@ fn a_pattern_says_what_the_matcher_written_by_hand_does() {
     }
     // The random text holds tokens of every kind.
     assert!(matched.iter().all(|&count| count > 50), "{matched:?}");
+}
+
+/// A matcher that reads far and then fails is asked again at the next
+/// token, and lexing takes quadratic time. Each text here is a run one of
+/// the matchers reads into. In a debug build a run takes a few hundredths
+/// of a second when lexing is linear, and many seconds when it is not.
+#[test]
+fn long_runs_are_lexed_in_linear_time_with_added_matchers() {
+    const UNITS: &[&str] = &[
+        "1 ", "12-", "1111 ", "1.", "10.0.", "1d:", "1d-", "ab:", "secret", "secre ", "a ",
+    ];
+    let by_hand = Lexer::with(added()).unwrap();
+    let as_patterns = Lexer::with(
+        patterns()
+            .into_iter()
+            .map(|pattern| Box::new(pattern) as Box<dyn Matcher>),
+    )
+    .unwrap();
+    for unit in UNITS {
+        let text = unit.repeat(20_000 / unit.len());
+        for (name, lexer) in [("by hand", &by_hand), ("as patterns", &as_patterns)] {
+            let started = std::time::Instant::now();
+            let end = lexer.tokens(&text).map(|token| token.end).last();
+            assert_eq!(end, Some(text.len()));
+            let elapsed = started.elapsed();
+            assert!(
+                elapsed.as_secs() < 2,
+                "a run of {unit:?} took {elapsed:?} {name}"
+            );
+        }
+    }
 }
 
 /// A matcher added to the built-in ones cannot take the kind of one.

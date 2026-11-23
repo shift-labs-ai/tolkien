@@ -180,12 +180,12 @@ let digit = || Class::range('0', '9');
 let hex = || digit() | Class::range('a', 'f') | Class::range('A', 'F');
 let letter_or_digit = || Class::letter() | Class::digit();
 
-// 13 to 19 digits in groups joined by a space or a dash.
+// 13 to 19 digits in at most eight groups joined by a space or a dash.
 let card = Pattern::new(
     "CARD_NUMBER",
     [
         Step::run(digit()),
-        Step::repeat([Step::one(Class::chars(" -")), Step::run(digit())]),
+        Step::repeat(7, [Step::one(Class::chars(" -")), Step::run(digit())]),
         Step::not(letter_or_digit()),
     ],
 )
@@ -219,13 +219,22 @@ let lexer = Lexer::with([Box::new(card) as Box<dyn Matcher>, Box::new(mac)]).unw
 | `number` | ASCII digits with a largest value, such as a part of an IP address |
 | `separator`, `same_separator` | A character of a class, and that same character again |
 | `not`, `not_before` | What must not come next: a class, or a list of steps |
-| `optional`, `repeat`, `either` | Steps that may be absent, that go round, or that are a choice |
+| `optional`, `repeat`, `either` | Steps that may be absent, that go round a bounded number of times, or that are a choice |
 | `trim_end` | Step back over a class at the end |
 | `Pattern::with_count` | How many characters of a class the whole token holds |
 
-A pattern works out by itself where it can start. A lexer with five
-patterns added was 10 to 25% slower than with the same five matchers
-written by hand. A pattern is data, which is
+A pattern works out by itself where it can start. A pattern of a fixed
+shape, such as a key or a MAC address, costs what the same matcher written
+by hand costs, within 3%. One that goes round, such as the card number,
+costs about twice as much each time it is asked, which on the texts of the
+table below is 5 to 15% of the whole. With five patterns added, a lexer
+was 9 to 21% slower than with the same five matchers written by hand.
+
+Bound what a pattern reads. `repeat` takes the largest number of rounds
+for that reason: a card number of any number of groups reads a whole
+column of numbers, fails, and reads it again from the next number.
+
+A pattern is data, which is
 what lets a matcher be written in another language or in a file and still
 run here. It cannot check a rule over the whole token, such as a checksum:
 lex with the pattern, then check the tokens of its kind.

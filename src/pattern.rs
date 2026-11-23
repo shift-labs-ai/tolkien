@@ -199,7 +199,10 @@ enum Kind {
     Not(Class),
     NotBefore(Vec<Step>),
     Optional(Vec<Step>),
-    Repeat(Vec<Step>),
+    Repeat {
+        steps: Vec<Step>,
+        max: usize,
+    },
     Either(Vec<Vec<Step>>),
     TrimEnd(Class),
 }
@@ -276,10 +279,18 @@ impl Step {
         Self(Kind::Optional(steps.into_iter().collect()))
     }
 
-    /// `steps` again and again, as long as they succeed and move on. It
-    /// always succeeds, also with no round.
-    pub fn repeat(steps: impl IntoIterator<Item = Step>) -> Self {
-        Self(Kind::Repeat(steps.into_iter().collect()))
+    /// `steps` again and again, at most `max` times, as long as they
+    /// succeed and move on. It always succeeds, also with no round.
+    ///
+    /// The bound is what keeps a lexer fast. A pattern that reads on
+    /// without one and then fails is asked again at the next token, and
+    /// reads the same text again: a card number with any number of groups
+    /// reads a whole column of numbers at each of them.
+    pub fn repeat(max: usize, steps: impl IntoIterator<Item = Step>) -> Self {
+        Self(Kind::Repeat {
+            steps: steps.into_iter().collect(),
+            max,
+        })
     }
 
     /// The first of `choices` whose steps succeed.
@@ -340,9 +351,12 @@ impl Step {
                 all(steps, cur, separator);
                 true
             }
-            Kind::Repeat(steps) => {
+            Kind::Repeat { steps, max } => {
                 let mut before = cur.pos();
-                while all(steps, cur, separator) && cur.pos() > before {
+                for _ in 0..*max {
+                    if !all(steps, cur, separator) || cur.pos() == before {
+                        break;
+                    }
                     before = cur.pos();
                 }
                 true
@@ -356,28 +370,32 @@ impl Step {
     }
 
     /// What the step says of a text that starts with `first`.
-    fn start(&self, first: char) -> Start {
+    fn start(&self, first: First) -> Start {
         let taken = |takes: bool| if takes { Start::Taken } else { Start::Refused };
         match &self.0 {
             Kind::Run { max: 0, .. } => Start::Passed,
-            Kind::Run { class, min, .. } => match class.contains(first) {
+            Kind::Run { class, min, .. } => match first.may_be_in(class) {
                 true => Start::Taken,
                 false if *min == 0 => Start::Passed,
                 false => Start::Refused,
             },
             Kind::Text(text) => match text.chars().next() {
-                Some(c) => taken(c == first),
+                Some(c) => taken(first.may_be(c)),
                 None => Start::Passed,
             },
-            Kind::Words(words) => taken(words.can_start(first)),
-            Kind::Number { .. } => taken(first.is_ascii_digit()),
-            Kind::Separator(class) => taken(class.contains(first)),
+            Kind::Words(words) => taken(match first {
+                First::Is(c) => words.can_start(c),
+                First::OutsideAscii => true,
+            }),
+            Kind::Number { .. } => taken(first.may_be_in(&Class::range('0', '9'))),
+            Kind::Separator(class) => taken(first.may_be_in(class)),
             Kind::SameSeparator => Start::Refused,
-            Kind::Not(class) => match class.contains(first) {
-                true => Start::Refused,
-                false => Start::Passed,
+            Kind::Not(class) => match first {
+                First::Is(c) if class.contains(c) => Start::Refused,
+                _ => Start::Passed,
             },
-            Kind::Optional(steps) | Kind::Repeat(steps) => match start(steps, first) {
+            Kind::Repeat { max: 0, .. } => Start::Passed,
+            Kind::Optional(steps) | Kind::Repeat { steps, .. } => match start(steps, first) {
                 Start::Taken => Start::Taken,
                 _ => Start::Passed,
             },
@@ -393,6 +411,34 @@ impl Step {
             }
             // What the steps refuse is not worked out: they may fail later.
             Kind::NotBefore(_) | Kind::TrimEnd(_) => Start::Passed,
+        }
+    }
+}
+
+/// The first character of a text, as far as it is known.
+#[derive(Clone, Copy)]
+enum First {
+    /// This character.
+    Is(char),
+    /// Some character outside ASCII, whichever takes a step furthest.
+    OutsideAscii,
+}
+
+impl First {
+    fn may_be(self, c: char) -> bool {
+        match self {
+            First::Is(first) => first == c,
+            First::OutsideAscii => !c.is_ascii(),
+        }
+    }
+
+    fn may_be_in(self, class: &Class) -> bool {
+        match self {
+            First::Is(first) => class.contains(first),
+            // Every named set holds characters outside ASCII.
+            First::OutsideAscii => {
+                class.named != 0 || class.ranges.iter().any(|&(_, last)| !last.is_ascii())
+            }
         }
     }
 }
@@ -421,12 +467,43 @@ fn all(steps: &[Step], cur: &mut Cursor<'_>, separator: &mut Option<char>) -> bo
 }
 
 /// What `steps` say of a text that starts with `first`.
-fn start(steps: &[Step], first: char) -> Start {
+fn start(steps: &[Step], first: First) -> Start {
     steps
         .iter()
         .map(|step| step.start(first))
         .find(|&start| start != Start::Passed)
         .unwrap_or(Start::Passed)
+}
+
+/// The characters that `steps` take first whatever the text, as far as
+/// that is plain to see: for each place, the ASCII characters of the class
+/// that stands there. A character outside ASCII may stand in any place.
+fn prefix(steps: &[Step]) -> Vec<u128> {
+    /// More places than this are not worth a test of their own.
+    const LONGEST: usize = 8;
+    let mut prefix = Vec::new();
+    for step in steps {
+        let fixed = match &step.0 {
+            Kind::Run { class, min, max } => {
+                prefix.extend(std::iter::repeat_n(class.ascii, *min));
+                min == max
+            }
+            Kind::Text(text) if text.is_ascii() => {
+                prefix.extend(text.bytes().map(|byte| 1 << byte));
+                true
+            }
+            Kind::Separator(class) => {
+                prefix.push(class.ascii);
+                true
+            }
+            _ => false,
+        };
+        if !fixed || prefix.len() >= LONGEST {
+            break;
+        }
+    }
+    prefix.truncate(LONGEST);
+    prefix
 }
 
 /// A [`Matcher`] built from [`Step`]s. See the [module](self).
@@ -439,6 +516,13 @@ pub struct Pattern {
     /// The ASCII characters a token can start with: bit `c` stands for the
     /// character `c`.
     ascii_starts: u128,
+    /// True when a token can start with a character outside ASCII. Most
+    /// patterns cannot, and say so without looking at the character.
+    starts_outside_ascii: bool,
+    /// The characters every token starts with, as far as the first steps
+    /// fix them: for each place, the ASCII characters that may stand there.
+    /// Most text a pattern is asked about fails here, before any step.
+    prefix: Vec<u128>,
 }
 
 impl Pattern {
@@ -454,12 +538,16 @@ impl Pattern {
             steps: steps.into_iter().collect(),
             count: None,
             ascii_starts: 0,
+            starts_outside_ascii: false,
+            prefix: Vec::new(),
         };
+        pattern.prefix = prefix(&pattern.steps);
         for byte in 0..128u8 {
-            if start(&pattern.steps, byte as char) == Start::Taken {
+            if start(&pattern.steps, First::Is(byte as char)) == Start::Taken {
                 pattern.ascii_starts |= 1 << byte;
             }
         }
+        pattern.starts_outside_ascii = start(&pattern.steps, First::OutsideAscii) == Start::Taken;
         pattern
     }
 
@@ -481,13 +569,24 @@ impl Matcher for Pattern {
         if first.is_ascii() {
             self.ascii_starts & 1 << first as u32 != 0
         } else {
-            start(&self.steps, first) == Start::Taken
+            self.starts_outside_ascii && start(&self.steps, First::Is(first)) == Start::Taken
         }
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         let from = cur.pos();
-        all(&self.steps, cur, &mut None)
+        let bytes = cur.rest().as_bytes();
+        for (place, allowed) in self.prefix.iter().enumerate() {
+            match bytes.get(place) {
+                Some(byte) if !byte.is_ascii() => break,
+                Some(byte) if allowed & 1 << byte != 0 => {}
+                _ => return false,
+            }
+        }
+        // A matcher that fails may leave the cursor anywhere: only the
+        // steps inside others put it back.
+        let separator = &mut None;
+        self.steps.iter().all(|step| step.matches(cur, separator))
             && self.count.as_ref().is_none_or(|(class, min, max)| {
                 let count = cur.since(from).chars().filter(|&c| class.contains(c));
                 (*min..=*max).contains(&count.count())
@@ -541,18 +640,22 @@ mod tests {
             "GROUPS",
             [
                 Step::run(ascii_digit()),
-                Step::repeat([Step::one(Class::chars("-")), Step::run(ascii_digit())]),
+                Step::repeat(2, [Step::one(Class::chars("-")), Step::run(ascii_digit())]),
                 Step::optional([Step::text("!"), Step::text("!")]),
             ],
         );
         assert_eq!(groups.match_prefix("1-22-333-x"), Some("1-22-333"));
+        assert_eq!(groups.match_prefix("1-22-333-4444"), Some("1-22-333"));
         assert_eq!(groups.match_prefix("1-!"), Some("1"));
         assert_eq!(groups.match_prefix("1!!"), Some("1!!"));
         assert_eq!(groups.match_prefix("-1"), None);
         // A round that takes nothing ends the repeat.
         let idle = Pattern::new(
             "IDLE",
-            [Step::text("a"), Step::repeat([Step::optional([])])],
+            [
+                Step::text("a"),
+                Step::repeat(usize::MAX, [Step::optional([])]),
+            ],
         );
         assert_eq!(idle.match_prefix("ab"), Some("a"));
     }
@@ -621,7 +724,7 @@ mod tests {
             "CARD",
             [
                 Step::run(ascii_digit()),
-                Step::repeat([Step::one(Class::chars(" -")), Step::run(ascii_digit())]),
+                Step::repeat(7, [Step::one(Class::chars(" -")), Step::run(ascii_digit())]),
             ],
         )
         .with_count(ascii_digit(), 13, 19);
@@ -650,8 +753,12 @@ mod tests {
             (vec![Step::run(Class::letter())], "abxé"),
             (vec![Step::optional([step("#")]), step("x")], "x#"),
             (
-                vec![Step::repeat([step("-")]), Step::run(ascii_digit())],
+                vec![Step::repeat(3, [step("-")]), Step::run(ascii_digit())],
                 "1-",
+            ),
+            (
+                vec![Step::repeat(0, [step("-")]), Step::run(ascii_digit())],
+                "1",
             ),
             (
                 vec![Step::between(0, 2, Class::chars(".")), step("a")],
@@ -680,6 +787,67 @@ mod tests {
         ] {
             assert_eq!(starts(&Pattern::new("P", steps)), expected);
         }
+    }
+
+    /// The quick test of the first characters refuses only what the steps
+    /// refuse: with it and without it a pattern finds the same.
+    #[test]
+    fn the_fixed_start_of_a_pattern_refuses_nothing_the_steps_take() {
+        let hex = || Class::range('0', '9') | Class::range('a', 'f');
+        let steps = || {
+            [
+                Step::exactly(2, hex() | Class::chars("é")),
+                Step::separator(Class::chars(":-")),
+                Step::text("x"),
+                Step::between(1, 3, Class::letter()),
+                Step::text("!"),
+            ]
+        };
+        let quick = Pattern::new("P", steps());
+        assert_eq!(quick.prefix.len(), 5);
+        let slow = Pattern {
+            prefix: Vec::new(),
+            ..Pattern::new("P", steps())
+        };
+        for text in [
+            "1a:xab!",
+            "1a-xé!",
+            "éé:xa!",
+            "1é:xabc!",
+            "1a:x!",
+            "1a:ya!",
+            "1g:xa!",
+            "1a",
+            "1a:",
+            "1a:xabcd!",
+            "",
+            "é",
+            "1a.xa!",
+        ] {
+            assert_eq!(
+                quick.match_prefix(text),
+                slow.match_prefix(text),
+                "{text:?}"
+            );
+        }
+        assert_eq!(quick.match_prefix("1a:xab!?"), Some("1a:xab!"));
+        assert_eq!(quick.match_prefix("éé:xa!"), Some("éé:xa!"));
+    }
+
+    #[test]
+    fn a_pattern_of_ascii_does_not_start_outside_it() {
+        let digits = Pattern::new("N", [Step::run(ascii_digit())]);
+        assert!(!digits.starts_outside_ascii && !digits.can_start('٣'));
+        for steps in [
+            vec![Step::run(Class::digit())],
+            vec![Step::optional([Step::text("a")]), Step::text("é")],
+            vec![Step::words(Trie::from_words(["ab"]))],
+            vec![Step::one(Class::range('a', 'é'))],
+        ] {
+            assert!(Pattern::new("P", steps).starts_outside_ascii);
+        }
+        assert!(Pattern::new("N", [Step::run(Class::digit())]).can_start('٣'));
+        assert!(!Pattern::new("N", [Step::run(Class::digit())]).can_start('é'));
     }
 
     #[test]
