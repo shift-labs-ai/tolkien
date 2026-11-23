@@ -23,12 +23,15 @@ pub use base::{
     WHITE_SPACE,
 };
 pub use currency::{Currency, CURRENCY};
+pub(crate) use date::starts_with_month;
 pub use date::{Date, DATE};
+pub(crate) use email::local_part;
 pub use email::{LikeEmail, LIKE_EMAIL};
 pub use iso8601::{Iso8601, DATE_ISO_8601};
 pub use number::{LikeNumber, LIKE_NUMBER};
 pub use tags::{Hashtag, Mention, HASHTAG, MENTION};
 pub use time::{Time, TIME};
+pub(crate) use url::has_prefix as has_url_prefix;
 pub use url::{LikeUrl, LIKE_URL};
 pub use word::{Word, WORD};
 

@@ -55,6 +55,10 @@ impl Matcher for Time {
         BASE_AND_NUMBER
     }
 
+    fn can_start(&self, first: char) -> bool {
+        first.is_ascii_digit()
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         // H or HH
         let digit = |cur: &mut Cursor<'_>| {

@@ -45,6 +45,10 @@ impl Matcher for Iso8601 {
         BASE
     }
 
+    fn can_start(&self, first: char) -> bool {
+        first.is_ascii_digit()
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         // YYYY-MM-DD
         if !(digits(cur, 4) && one(cur, '-') && digits(cur, 2) && one(cur, '-') && digits(cur, 2)) {

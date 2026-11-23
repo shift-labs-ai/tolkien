@@ -35,7 +35,10 @@ mod cursor;
 mod lexer;
 mod matcher;
 pub mod matchers;
+mod shortcuts;
 mod trie;
+// Generated: its layout is the generator's.
+#[rustfmt::skip]
 mod unicode_tables;
 
 pub use cursor::Cursor;

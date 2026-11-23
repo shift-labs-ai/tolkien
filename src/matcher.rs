@@ -40,9 +40,23 @@ pub trait Matcher: Send + Sync {
         &[]
     }
 
+    /// Whether a token of this kind can start with `first`. The lexer asks
+    /// once for every ASCII character when it is built, and then calls
+    /// [`matches`](Matcher::matches) only where the answer is `true`, so a
+    /// precise answer makes lexing faster.
+    ///
+    /// The default, `true`, is always correct. An override must answer `true`
+    /// for the first character of every text that `matches` accepts.
+    fn can_start(&self, _first: char) -> bool {
+        true
+    }
+
     /// Tries to match at the cursor. On a match, leaves the cursor just past
     /// the token and returns `true`. On no match, returns `false`; the cursor
     /// may be left anywhere.
+    ///
+    /// The answer depends only on the text from the cursor on: the cursor
+    /// shows nothing before it.
     fn matches(&self, cur: &mut Cursor<'_>) -> bool;
 
     /// The token at the start of `text`, if `text` starts with one.

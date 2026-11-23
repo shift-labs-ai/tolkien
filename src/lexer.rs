@@ -5,6 +5,7 @@ use std::iter::FusedIterator;
 
 use crate::matcher::{match_at, Matcher};
 use crate::matchers;
+use crate::shortcuts;
 
 /// The kind of a character no matcher claimed.
 pub const OTHER: &str = "OTHER";
@@ -86,6 +87,14 @@ impl std::error::Error for Error {}
 /// ```
 pub struct Lexer {
     matchers: Vec<Box<dyn Matcher>>,
+    /// For every ASCII character, the matchers that can start with it, as
+    /// indexes into `matchers` in the order they are tried. The list of
+    /// character `c` is `candidates[starts[c]..starts[c + 1]]`.
+    candidates: Vec<u16>,
+    starts: [u32; 129],
+    /// True for the default lexer, whose commonest tokens `shortcuts` knows
+    /// without asking the matchers.
+    shortcuts: bool,
 }
 
 impl Lexer {
@@ -103,9 +112,47 @@ impl Lexer {
                 return Err(Error::DuplicateKind(matcher.kind()));
             }
         }
+        let matchers = order(matchers)?;
+        let mut candidates = Vec::new();
+        let mut starts = [0; 129];
+        for ascii in 0..128u8 {
+            starts[ascii as usize] = candidates.len() as u32;
+            for (index, matcher) in matchers.iter().enumerate() {
+                if matcher.can_start(ascii as char) {
+                    candidates.push(index as u16);
+                }
+            }
+        }
+        starts[128] = candidates.len() as u32;
         Ok(Self {
-            matchers: order(matchers)?,
+            matchers,
+            candidates,
+            starts,
+            shortcuts: false,
         })
+    }
+
+    /// The kind and the end of the token that starts at byte offset `start`
+    /// of `text`, whose first character is `first`.
+    #[inline]
+    fn token_at(&self, text: &str, start: usize, first: char) -> (&'static str, usize) {
+        let attempt = |matcher: &dyn Matcher| {
+            let end = match_at(matcher, text, start)?;
+            Some((matcher.kind(), end))
+        };
+        let found = if first.is_ascii() {
+            let list =
+                self.starts[first as usize] as usize..self.starts[first as usize + 1] as usize;
+            self.candidates[list]
+                .iter()
+                .find_map(|&index| attempt(self.matchers[index as usize].as_ref()))
+        } else {
+            self.matchers
+                .iter()
+                .filter(|matcher| matcher.can_start(first))
+                .find_map(|matcher| attempt(matcher.as_ref()))
+        };
+        found.unwrap_or((OTHER, start + first.len_utf8()))
     }
 
     /// The kinds of this lexer's matchers, in the order they are tried.
@@ -115,18 +162,117 @@ impl Lexer {
 
     /// The tokens of `text`, from start to end.
     pub fn tokens<'l, 't>(&'l self, text: &'t str) -> Tokens<'l, 't> {
+        self.tokens_from(text, 0)
+    }
+
+    /// The tokens of `text` from byte offset `start` on.
+    fn tokens_from<'l, 't>(&'l self, text: &'t str, start: usize) -> Tokens<'l, 't> {
         Tokens {
             lexer: self,
             text,
-            pos: 0,
+            pos: start,
         }
+    }
+
+    /// All the tokens of `text`, lexed on every core of the machine.
+    ///
+    /// The result is the same as `lexer.tokens(text).collect()`. It comes
+    /// sooner for a long text; a short one is lexed on the calling thread.
+    pub fn tokens_parallel<'t>(&self, text: &'t str) -> Vec<Token<'t>> {
+        /// Below this many bytes for each thread, starting threads costs
+        /// more than they save.
+        const WORTH_A_THREAD: usize = 64 * 1024;
+        let cores = std::thread::available_parallelism().map_or(1, usize::from);
+        self.tokens_parallel_on(text, cores.min(text.len() / WORTH_A_THREAD))
+    }
+
+    /// All the tokens of `text`, lexed on `threads` threads.
+    ///
+    /// The text is cut into `threads` pieces of the same length. A cut
+    /// rarely falls between two tokens, so each thread starts at its cut and
+    /// lexes until it has passed the next one; the tokens of a piece are
+    /// taken from the first one that starts where the tokens before it end.
+    /// From such a place on they are right, because a token depends only on
+    /// the text from its start on. The few tokens in between are lexed
+    /// again.
+    pub fn tokens_parallel_on<'t>(&self, text: &'t str, threads: usize) -> Vec<Token<'t>> {
+        let piece = text.len().div_ceil(threads.max(1)).max(1);
+        let mut cuts: Vec<usize> = (0..text.len())
+            .step_by(piece)
+            .map(|cut| {
+                (cut..=text.len())
+                    .find(|&at| text.is_char_boundary(at))
+                    .unwrap_or(text.len())
+            })
+            .collect();
+        cuts.dedup();
+        // Threads cannot be started on wasm32.
+        if cuts.len() < 2 || cfg!(target_arch = "wasm32") {
+            return self.tokens(text).collect();
+        }
+
+        let lex_piece = |index: usize| -> Vec<Token<'t>> {
+            let end = cuts.get(index + 1).copied().unwrap_or(text.len());
+            let mut tokens = Vec::with_capacity((end - cuts[index]) / 3);
+            for token in self.tokens_from(text, cuts[index]) {
+                tokens.push(token);
+                if token.end >= end {
+                    break;
+                }
+            }
+            tokens
+        };
+        let pieces: Vec<Vec<Token<'t>>> = std::thread::scope(|scope| {
+            let threads: Vec<_> = (1..cuts.len())
+                .map(|index| scope.spawn(move || lex_piece(index)))
+                .collect();
+            let first = lex_piece(0);
+            std::iter::once(first)
+                .chain(
+                    threads
+                        .into_iter()
+                        .map(|thread| thread.join().expect("a matcher panicked")),
+                )
+                .collect()
+        });
+
+        let mut pieces = pieces.into_iter();
+        let mut tokens = pieces.next().unwrap_or_default();
+        tokens.reserve(text.len() / 3);
+        for piece in pieces {
+            let mut pos = tokens.last().map_or(0, |token| token.end);
+            let piece_end = piece.last().map_or(0, |token| token.end);
+            // Lex on from the last token until one of this piece starts
+            // where the last one ends, or the piece is passed.
+            while pos < piece_end {
+                if let Ok(index) = piece.binary_search_by_key(&pos, |token| token.start) {
+                    tokens.extend_from_slice(&piece[index..]);
+                    break;
+                }
+                let token = self
+                    .tokens_from(text, pos)
+                    .next()
+                    .expect("the text has not ended");
+                tokens.push(token);
+                pos = token.end;
+            }
+        }
+        tokens
     }
 }
 
 impl Default for Lexer {
     /// A lexer with every built-in matcher: [`matchers::all`].
+    ///
+    /// It gives the same tokens as `Lexer::new(matchers::all())` and is
+    /// several times faster: it knows what the built-in matchers answer for
+    /// plain words, white space and punctuation without asking each of them.
     fn default() -> Self {
-        Self::new(matchers::all()).expect("the built-in matchers form a valid lexer")
+        let lexer = Self::new(matchers::all()).expect("the built-in matchers form a valid lexer");
+        Self {
+            shortcuts: true,
+            ..lexer
+        }
     }
 }
 
@@ -197,18 +343,24 @@ pub struct Tokens<'l, 't> {
 impl<'t> Iterator for Tokens<'_, 't> {
     type Item = Token<'t>;
 
+    #[inline]
     fn next(&mut self) -> Option<Token<'t>> {
         let start = self.pos;
-        let first = self.text[start..].chars().next()?;
-        let (kind, end) = self
-            .lexer
-            .matchers
-            .iter()
-            .find_map(|matcher| {
-                let end = match_at(matcher.as_ref(), self.text, start)?;
-                Some((matcher.kind(), end))
-            })
-            .unwrap_or((OTHER, start + first.len_utf8()));
+        if start >= self.text.len() {
+            return None;
+        }
+        let shortcut = if self.lexer.shortcuts {
+            shortcuts::token(self.text, start)
+        } else {
+            None
+        };
+        let (kind, end) = shortcut.unwrap_or_else(|| {
+            let first = self.text[start..]
+                .chars()
+                .next()
+                .expect("the text has not ended");
+            self.lexer.token_at(self.text, start, first)
+        });
         self.pos = end;
         Some(Token {
             kind,

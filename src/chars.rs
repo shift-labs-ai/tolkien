@@ -4,217 +4,254 @@
 //! Character Database by `tools/gen_unicode.py`; `docs/charsets.md` lists the
 //! members of each named set.
 
-use std::cmp::Ordering;
-
 use crate::unicode_tables as tables;
 
 pub use crate::unicode_tables::UNICODE_VERSION;
 
-fn in_ranges(table: &[(u32, u32)], c: char) -> bool {
-    let cp = c as u32;
-    table
-        .binary_search_by(|&(first, last)| {
-            if last < cp {
-                Ordering::Less
-            } else if first > cp {
-                Ordering::Greater
-            } else {
-                Ordering::Equal
-            }
-        })
-        .is_ok()
+/// The classes of the code point `cp`, as a mask of the bits in the tables.
+const fn lookup(cp: u32) -> u32 {
+    let block = tables::BLOCK_OF[(cp >> 8) as usize] as usize;
+    tables::CLASSES[tables::BLOCKS[block][(cp & 0xFF) as usize] as usize]
 }
 
-fn in_set(set: &[char], c: char) -> bool {
-    set.binary_search(&c).is_ok()
+/// The classes of the ASCII characters, in one table: most text is ASCII.
+const ASCII: [u32; 128] = {
+    let mut classes = [0; 128];
+    let mut cp = 0;
+    while cp < 128 {
+        classes[cp] = lookup(cp as u32);
+        cp += 1;
+    }
+    classes
+};
+
+/// The classes of an ASCII character.
+pub(crate) const fn ascii_classes(byte: u8) -> u32 {
+    ASCII[byte as usize]
+}
+
+/// The classes of the punctuation written with numbers: full stops, commas,
+/// percent and number signs, math symbols, dashes and connectors.
+pub(crate) const NUMBER_PUNCTUATION: u32 = tables::FULL_STOP
+    | tables::COMMA
+    | tables::PERCENT_SIGN
+    | tables::NUMBER_SIGN
+    | tables::MATH_SYMBOL
+    | tables::DASH_PUNCTUATION
+    | tables::CONNECTOR_PUNCTUATION;
+
+/// The classes of `c`, as a mask of the bits in the tables.
+#[inline]
+pub(crate) fn classes(c: char) -> u32 {
+    if c.is_ascii() {
+        ASCII[c as usize]
+    } else {
+        lookup(c as u32)
+    }
+}
+
+/// True when `c` is in at least one of the classes of `mask`.
+#[inline]
+fn is(c: char, mask: u32) -> bool {
+    classes(c) & mask != 0
 }
 
 /// A letter: general category L.
 #[inline]
 pub fn is_letter(c: char) -> bool {
-    if c.is_ascii() {
-        c.is_ascii_alphabetic()
-    } else {
-        in_ranges(tables::LETTER, c)
-    }
+    is(c, tables::LETTER)
 }
 
 /// A decimal digit of any script: general category Nd.
 #[inline]
 pub fn is_digit(c: char) -> bool {
-    if c.is_ascii() {
-        c.is_ascii_digit()
-    } else {
-        in_ranges(tables::DECIMAL_DIGIT, c)
-    }
+    is(c, tables::DECIMAL_DIGIT)
 }
 
 /// A letter or a decimal digit.
 #[inline]
 pub fn is_letter_or_digit(c: char) -> bool {
-    is_letter(c) || is_digit(c)
+    is(c, tables::LETTER | tables::DECIMAL_DIGIT)
 }
 
 /// Any number character: general category N (digits, letter numbers such as
 /// Roman numerals, and other numbers such as fractions).
 #[inline]
 pub fn is_number(c: char) -> bool {
-    if c.is_ascii() {
-        c.is_ascii_digit()
-    } else {
-        in_ranges(tables::NUMBER, c)
-    }
+    is(c, tables::NUMBER)
 }
 
 /// White space: the Unicode `White_Space` property.
 #[inline]
 pub fn is_whitespace(c: char) -> bool {
-    if c.is_ascii() {
-        matches!(c, ' ' | '\t'..='\r')
-    } else {
-        in_ranges(tables::WHITE_SPACE, c)
-    }
+    is(c, tables::WHITE_SPACE)
 }
 
 /// Anything that is not a letter, a decimal digit or white space.
 #[inline]
 pub fn is_symbol(c: char) -> bool {
-    !is_letter_or_digit(c) && !is_whitespace(c)
+    !is(
+        c,
+        tables::LETTER | tables::DECIMAL_DIGIT | tables::WHITE_SPACE,
+    )
 }
 
 /// General category Sm, such as `+`, `~` and `=`.
+#[inline]
 pub fn is_math_symbol(c: char) -> bool {
-    in_ranges(tables::MATH_SYMBOL, c)
+    is(c, tables::MATH_SYMBOL)
 }
 
 /// General category Pd, such as `-` and the en dash.
+#[inline]
 pub fn is_dash_punctuation(c: char) -> bool {
-    in_ranges(tables::DASH_PUNCTUATION, c)
+    is(c, tables::DASH_PUNCTUATION)
 }
 
 /// General category Pc, such as `_`.
+#[inline]
 pub fn is_connector_punctuation(c: char) -> bool {
-    in_ranges(tables::CONNECTOR_PUNCTUATION, c)
+    is(c, tables::CONNECTOR_PUNCTUATION)
 }
 
 /// General category Sc, such as `$` and the euro sign.
+#[inline]
 pub fn is_currency_symbol(c: char) -> bool {
-    in_ranges(tables::CURRENCY_SYMBOL, c)
+    is(c, tables::CURRENCY_SYMBOL)
 }
 
 /// A full stop of any script or width.
+#[inline]
 pub fn is_full_stop(c: char) -> bool {
-    in_set(tables::FULL_STOP, c)
+    is(c, tables::FULL_STOP)
 }
 
 /// A comma of any script or width.
+#[inline]
 pub fn is_comma(c: char) -> bool {
-    in_set(tables::COMMA, c)
+    is(c, tables::COMMA)
 }
 
 /// A colon of any script or width.
+#[inline]
 pub fn is_colon(c: char) -> bool {
-    in_set(tables::COLON, c)
+    is(c, tables::COLON)
 }
 
 /// A question mark.
+#[inline]
 pub fn is_question_mark(c: char) -> bool {
-    in_set(tables::QUESTION_MARK, c)
+    is(c, tables::QUESTION_MARK)
 }
 
 /// An exclamation mark.
+#[inline]
 pub fn is_exclamation_mark(c: char) -> bool {
-    in_set(tables::EXCLAMATION_MARK, c)
+    is(c, tables::EXCLAMATION_MARK)
 }
 
 /// A punctuation apostrophe that can stand inside a word, the typographic
 /// one included. The modifier-letter apostrophes, such as U+02BC, are
 /// [letters](is_letter).
+#[inline]
 pub fn is_apostrophe(c: char) -> bool {
-    in_set(tables::APOSTROPHE, c)
+    is(c, tables::APOSTROPHE)
 }
 
 /// A hyphen, dash or minus sign: the Unicode `Dash` property.
+#[inline]
 pub fn is_dash(c: char) -> bool {
-    in_set(tables::DASH, c)
+    is(c, tables::DASH)
 }
 
 /// An underscore.
+#[inline]
 pub fn is_underscore(c: char) -> bool {
-    in_set(tables::UNDERSCORE, c)
+    is(c, tables::UNDERSCORE)
 }
 
 /// A slash or a backslash.
+#[inline]
 pub fn is_slash(c: char) -> bool {
-    in_set(tables::SLASH, c)
+    is(c, tables::SLASH)
 }
 
 /// A percent sign.
+#[inline]
 pub fn is_percent_sign(c: char) -> bool {
-    in_set(tables::PERCENT_SIGN, c)
+    is(c, tables::PERCENT_SIGN)
 }
 
 /// A number sign (`#`).
+#[inline]
 pub fn is_number_sign(c: char) -> bool {
-    in_set(tables::NUMBER_SIGN, c)
+    is(c, tables::NUMBER_SIGN)
+}
+
+/// Punctuation written with numbers: a full stop, a comma, a percent or
+/// number sign, a math symbol, a dash or a connector.
+#[inline]
+pub fn is_number_punctuation(c: char) -> bool {
+    is(c, NUMBER_PUNCTUATION)
 }
 
 /// A character that forces a line break.
+#[inline]
 pub fn is_line_termination(c: char) -> bool {
-    in_set(tables::LINE_TERMINATION, c)
+    is(c, tables::LINE_TERMINATION)
 }
 
 /// White space or sentence punctuation (`. , : ? !`): what may follow a word.
+#[inline]
 pub fn is_word_termination(c: char) -> bool {
-    is_whitespace(c)
-        || is_full_stop(c)
-        || is_comma(c)
-        || is_colon(c)
-        || is_question_mark(c)
-        || is_exclamation_mark(c)
+    const TERMINATION: u32 = tables::WHITE_SPACE
+        | tables::FULL_STOP
+        | tables::COMMA
+        | tables::COLON
+        | tables::QUESTION_MARK
+        | tables::EXCLAMATION_MARK;
+    is(c, TERMINATION)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The lookups are binary searches, so an unsorted table would answer
-    /// wrongly without failing.
-    #[test]
-    fn generated_tables_are_sorted_and_not_empty() {
-        for (name, table) in tables::RANGE_TABLES {
-            assert!(!table.is_empty(), "{name} is empty");
-            assert!(
-                table.iter().all(|(first, last)| first <= last),
-                "{name} has a reversed range"
-            );
-            assert!(
-                table.windows(2).all(|w| w[0].1 < w[1].0),
-                "{name} is not sorted"
-            );
-        }
-        for (name, set) in tables::NAMED_SETS {
-            assert!(!set.is_empty(), "{name} is empty");
-            assert!(set.windows(2).all(|w| w[0] < w[1]), "{name} is not sorted");
+    /// Checks one class of the lookup table against its members, given as
+    /// sorted ranges, for every character.
+    fn assert_class(name: &str, bit: u32, members: impl Iterator<Item = (u32, u32)>) {
+        let mut members = members.peekable();
+        assert!(members.peek().is_some(), "{name} is empty");
+        for cp in 0..=0x10FFFF {
+            let Some(c) = char::from_u32(cp) else {
+                continue;
+            };
+            // The members are sorted, so one walk over them serves every character.
+            while members.next_if(|&(_, last)| last < cp).is_some() {}
+            let expected = members.peek().is_some_and(|&(first, _)| first <= cp);
+            if is(c, bit) != expected {
+                panic!("{name} is wrong for {c:?}");
+            }
         }
     }
 
-    /// The ASCII shortcuts must agree with the tables they skip.
+    /// The lookup table against the ranges and lists it was built from, for
+    /// every character and every class.
     #[test]
-    fn ascii_shortcuts_agree_with_the_tables() {
+    fn lookup_table_agrees_with_its_source() {
+        for (name, bit, ranges) in tables::source::RANGES {
+            assert_class(name, *bit, ranges.iter().copied());
+        }
+        for (name, bit, list) in tables::source::LISTS {
+            assert_class(name, *bit, list.iter().map(|&c| (c as u32, c as u32)));
+        }
+    }
+
+    /// The ASCII shortcut against the full table.
+    #[test]
+    fn ascii_table_agrees_with_the_lookup_table() {
         for c in (0u8..0x80).map(char::from) {
-            assert_eq!(is_letter(c), in_ranges(tables::LETTER, c), "letter {c:?}");
-            assert_eq!(
-                is_digit(c),
-                in_ranges(tables::DECIMAL_DIGIT, c),
-                "digit {c:?}"
-            );
-            assert_eq!(is_number(c), in_ranges(tables::NUMBER, c), "number {c:?}");
-            assert_eq!(
-                is_whitespace(c),
-                in_ranges(tables::WHITE_SPACE, c),
-                "whitespace {c:?}"
-            );
+            assert_eq!(classes(c), lookup(c as u32), "{c:?}");
         }
     }
 

@@ -32,6 +32,10 @@ impl Matcher for Hashtag {
         BASE_AND_NUMBER
     }
 
+    fn can_start(&self, first: char) -> bool {
+        first == '#'
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         tag(cur, '#')
     }
@@ -47,6 +51,10 @@ impl Matcher for Mention {
 
     fn overrides(&self) -> &'static [&'static str] {
         BASE_AND_NUMBER
+    }
+
+    fn can_start(&self, first: char) -> bool {
+        first == '@'
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {

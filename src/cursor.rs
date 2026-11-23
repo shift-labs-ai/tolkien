@@ -6,16 +6,23 @@
 /// A matcher reads with [`peek`](Cursor::peek) and moves with the `advance*`
 /// methods. It may leave the cursor anywhere when it reports no match: the
 /// lexer gives every matcher its own cursor.
+///
+/// A cursor does not show what stands before the place it was created at:
+/// [`prev`](Cursor::prev) and the `back*` methods stop there. A token so
+/// depends only on the text from its start on, which is what lets a text be
+/// lexed from any token boundary, and in pieces.
 #[derive(Debug, Clone)]
 pub struct Cursor<'t> {
     text: &'t str,
     pos: usize,
+    /// Where the cursor was created. Nothing before it is shown.
+    start: usize,
 }
 
 impl<'t> Cursor<'t> {
     /// A cursor at the start of `text`.
     pub fn new(text: &'t str) -> Self {
-        Self { text, pos: 0 }
+        Self::at(text, 0)
     }
 
     /// A cursor at byte offset `pos` of `text`.
@@ -23,9 +30,15 @@ impl<'t> Cursor<'t> {
     /// # Panics
     /// If `pos` is not on a character boundary of `text`.
     pub fn at(text: &'t str, pos: usize) -> Self {
-        let mut cursor = Self::new(text);
-        cursor.set_pos(pos);
-        cursor
+        assert!(
+            text.is_char_boundary(pos),
+            "position {pos} is not a character boundary"
+        );
+        Self {
+            text,
+            pos,
+            start: pos,
+        }
     }
 
     /// The current byte offset.
@@ -36,11 +49,13 @@ impl<'t> Cursor<'t> {
     /// Moves to byte offset `pos`, usually one saved earlier from [`pos`](Cursor::pos).
     ///
     /// # Panics
-    /// If `pos` is not on a character boundary of the text.
+    /// If `pos` is not on a character boundary of the text, or is before
+    /// the place the cursor was created at.
     pub fn set_pos(&mut self, pos: usize) {
         assert!(
-            self.text.is_char_boundary(pos),
-            "position {pos} is not a character boundary"
+            pos >= self.start && self.text.is_char_boundary(pos),
+            "position {pos} is not a character boundary at or after {}",
+            self.start
         );
         self.pos = pos;
     }
@@ -87,9 +102,10 @@ impl<'t> Cursor<'t> {
         ahead.advance_if(first) && ahead.peek().is_some_and(second)
     }
 
-    /// The character just before the cursor, or `None` at the start.
+    /// The character just before the cursor, or `None` at the place the
+    /// cursor was created at.
     pub fn prev(&self) -> Option<char> {
-        self.text[..self.pos].chars().next_back()
+        self.text[self.start..self.pos].chars().next_back()
     }
 
     /// Moves past the character at the cursor and returns it.
@@ -214,7 +230,8 @@ mod tests {
 
     #[test]
     fn back_while_stops_at_the_first_rejected_character_and_at_the_start() {
-        let mut cur = Cursor::at("aé..", 5);
+        let mut cur = Cursor::new("aé..");
+        cur.advance_while(|_| true);
         assert_eq!(cur.back_while(|c| c == '.'), 2);
         assert_eq!(cur.pos(), 3);
         assert_eq!(cur.back_while(|c| c == '.'), 0);
@@ -245,6 +262,24 @@ mod tests {
     #[should_panic(expected = "not a character boundary")]
     fn set_pos_rejects_the_middle_of_a_character() {
         Cursor::new("é").set_pos(1);
+    }
+
+    #[test]
+    fn shows_nothing_before_the_place_it_was_created_at() {
+        let mut cur = Cursor::at("ab.c", 2);
+        assert_eq!(cur.prev(), None);
+        assert_eq!(cur.back(), None);
+        assert_eq!(cur.back_while(|_| true), 0);
+        cur.advance();
+        assert_eq!(cur.prev(), Some('.'));
+        assert_eq!(cur.back_while(|_| true), 1);
+        assert_eq!(cur.pos(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "not a character boundary at or after 2")]
+    fn set_pos_rejects_a_position_before_the_start() {
+        Cursor::at("ab.c", 2).set_pos(1);
     }
 
     #[test]

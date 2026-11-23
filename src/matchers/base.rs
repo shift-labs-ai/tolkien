@@ -24,6 +24,10 @@ impl Matcher for Digit {
         DIGIT
     }
 
+    fn can_start(&self, first: char) -> bool {
+        is_digit(first)
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         cur.advance_while(is_digit) > 0
     }
@@ -35,6 +39,10 @@ pub struct Letter;
 impl Matcher for Letter {
     fn kind(&self) -> &'static str {
         LETTER
+    }
+
+    fn can_start(&self, first: char) -> bool {
+        is_letter(first)
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
@@ -50,6 +58,10 @@ impl Matcher for Symbol {
         SYMBOL
     }
 
+    fn can_start(&self, first: char) -> bool {
+        is_symbol(first)
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         cur.advance_if(is_symbol)
     }
@@ -61,6 +73,10 @@ pub struct WhiteSpace;
 impl Matcher for WhiteSpace {
     fn kind(&self) -> &'static str {
         WHITE_SPACE
+    }
+
+    fn can_start(&self, first: char) -> bool {
+        is_whitespace(first)
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
@@ -78,6 +94,10 @@ impl Matcher for LineTermination {
 
     fn overrides(&self) -> &'static [&'static str] {
         BASE
+    }
+
+    fn can_start(&self, first: char) -> bool {
+        is_line_termination(first)
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {

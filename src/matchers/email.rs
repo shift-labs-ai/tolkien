@@ -22,8 +22,24 @@ pub struct LikeEmail;
 /// a long run of local-part characters that holds no `@`.
 const MAX_LOCAL_PART: usize = 64;
 
-fn is_local_symbol(c: char) -> bool {
-    matches!(c, '_' | '-' | '.' | '+')
+/// A byte of the local part after its first: an ASCII letter or digit, or
+/// one of `_ - . +`.
+fn is_local_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'+')
+}
+
+/// The length of the local part at the start of `bytes`, when one stands
+/// there and an `@` follows it.
+pub(crate) fn local_part(bytes: &[u8]) -> Option<usize> {
+    if !bytes.first().is_some_and(u8::is_ascii_alphanumeric) {
+        return None;
+    }
+    let local = bytes
+        .iter()
+        .take(MAX_LOCAL_PART)
+        .take_while(|&&byte| is_local_byte(byte))
+        .count();
+    (bytes.get(local) == Some(&b'@')).then_some(local)
 }
 
 fn is_tld_symbol(c: char) -> bool {
@@ -43,18 +59,17 @@ impl Matcher for LikeEmail {
         BASE
     }
 
+    fn can_start(&self, first: char) -> bool {
+        is_ascii_letter_or_digit(first)
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
-        if !cur.advance_if(is_ascii_letter_or_digit) {
+        // The local part is ASCII, so it is read as bytes: every word of a
+        // text comes through here, and almost none is an address.
+        let Some(local) = local_part(cur.rest().as_bytes()) else {
             return false;
-        }
-        for _ in 1..MAX_LOCAL_PART {
-            if !cur.advance_if(|c| is_ascii_letter_or_digit(c) || is_local_symbol(c)) {
-                break;
-            }
-        }
-        if !cur.advance_if(|c| c == '@') {
-            return false;
-        }
+        };
+        cur.set_pos(cur.pos() + local + 1);
         let (_, domain) = cur.advance_while2(|c| c == '-', is_ascii_letter_or_digit);
         if domain == 0 || !cur.advance_if(|c| c == '.') {
             return false;

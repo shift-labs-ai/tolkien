@@ -92,9 +92,56 @@ fn last_number(cur: &mut Cursor<'_>) -> bool {
     cur.advance_while(is_ascii_digit) > 0 && !cur.peek().is_some_and(is_letter)
 }
 
+/// For every byte, whether a month name has it as its first letter (bit
+/// 0), its second (bit 1) or its third (bit 2), in either case.
+const MONTH_LETTERS: [u8; 256] = {
+    let mut letters = [0; 256];
+    let mut name = 0;
+    while name < MONTH_NAMES.len() {
+        let bytes = MONTH_NAMES[name].as_bytes();
+        let mut at = 0;
+        while at < 3 {
+            letters[bytes[at].to_ascii_lowercase() as usize] |= 1 << at;
+            letters[bytes[at].to_ascii_uppercase() as usize] |= 1 << at;
+            at += 1;
+        }
+        name += 1;
+    }
+    letters
+};
+
+/// False when `text` cannot start with a month name, going by its first
+/// three bytes.
+///
+/// Every word of a text is asked about, and what letters a word starts with
+/// is not something a processor can guess. So the three bytes are tested
+/// together, with no branch between them: a byte after the end of a short
+/// word is not a letter and fails like any other.
+#[inline]
+fn may_start_with_month(text: &[u8]) -> bool {
+    text.first_chunk::<3>().is_some_and(|&[a, b, c]| {
+        MONTH_LETTERS[a as usize]
+            & MONTH_LETTERS[b as usize] >> 1
+            & MONTH_LETTERS[c as usize] >> 2
+            & 1
+            != 0
+    })
+}
+
+/// True when the first `len` bytes of `text`, a run of ASCII letters, are a
+/// month name in any mix of upper and lower case. Stricter than this,
+/// [`Date`] takes a name only in one of its common cases.
+#[inline]
+pub(crate) fn starts_with_month(text: &[u8], len: usize) -> bool {
+    may_start_with_month(text)
+        && MONTH_NAMES
+            .iter()
+            .any(|name| name.as_bytes().eq_ignore_ascii_case(&text[..len]))
+}
+
 /// A month name and the full stop of an abbreviation, if there is one.
 fn month(cur: &mut Cursor<'_>) -> bool {
-    MONTHS.advance_longest(cur) && {
+    may_start_with_month(cur.rest().as_bytes()) && MONTHS.advance_longest(cur) && {
         cur.advance_if(|c| c == '.');
         true
     }
@@ -102,6 +149,10 @@ fn month(cur: &mut Cursor<'_>) -> bool {
 
 fn numeric_date(cur: &mut Cursor<'_>) -> bool {
     let (first_len, first) = number(cur);
+    // A year has four digits, and a day or a month one or two.
+    if !matches!(first_len, 1 | 2 | 4) {
+        return false;
+    }
     let Some(separator) = cur.peek().filter(|&c| is_numeric_separator(c)) else {
         return false;
     };
@@ -133,7 +184,10 @@ fn numeric_date(cur: &mut Cursor<'_>) -> bool {
 }
 
 fn month_name_date(cur: &mut Cursor<'_>) -> bool {
-    if month(cur) {
+    if cur.peek().is_some_and(|c| c.is_ascii_alphabetic()) {
+        if !month(cur) {
+            return false;
+        }
         // <month> <day> <year>, or <month> <six digits>
         cur.advance_while(is_separator);
         match cur.advance_while(is_ascii_digit) {
@@ -171,6 +225,13 @@ impl Matcher for Date {
 
     fn overrides(&self) -> &'static [&'static str] {
         BASE
+    }
+
+    fn can_start(&self, first: char) -> bool {
+        first.is_ascii_digit()
+            || MONTH_NAMES
+                .iter()
+                .any(|name| name.starts_with(first.to_ascii_uppercase()))
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {

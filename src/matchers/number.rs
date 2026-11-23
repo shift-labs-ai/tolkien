@@ -1,10 +1,7 @@
 //! Numbers as they are written in text.
 
 use super::BASE;
-use crate::chars::{
-    is_comma, is_connector_punctuation, is_dash_punctuation, is_full_stop, is_math_symbol,
-    is_number, is_number_sign, is_percent_sign,
-};
+use crate::chars::{is_number, is_number_punctuation, is_percent_sign};
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
 
@@ -25,16 +22,6 @@ pub struct LikeNumber;
 /// character. The limit bounds the work on a long run of punctuation.
 const MAX_LEADING_PUNCTUATION: usize = 2;
 
-fn is_number_punctuation(c: char) -> bool {
-    is_full_stop(c)
-        || is_comma(c)
-        || is_percent_sign(c)
-        || is_number_sign(c)
-        || is_math_symbol(c)
-        || is_dash_punctuation(c)
-        || is_connector_punctuation(c)
-}
-
 impl Matcher for LikeNumber {
     fn kind(&self) -> &'static str {
         LIKE_NUMBER
@@ -42,6 +29,10 @@ impl Matcher for LikeNumber {
 
     fn overrides(&self) -> &'static [&'static str] {
         BASE
+    }
+
+    fn can_start(&self, first: char) -> bool {
+        is_number(first) || is_number_punctuation(first)
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {

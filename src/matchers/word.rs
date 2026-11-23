@@ -26,6 +26,10 @@ impl Matcher for Word {
         BASE
     }
 
+    fn can_start(&self, first: char) -> bool {
+        is_letter(first)
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         if !cur.advance_if(is_letter) {
             return false;

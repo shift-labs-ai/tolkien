@@ -26,6 +26,10 @@ impl Matcher for AlphaNumericSequence {
         BASE
     }
 
+    fn can_start(&self, first: char) -> bool {
+        is_letter_or_digit(first)
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         if !cur.peek().is_some_and(is_letter_or_digit) {
             return false;

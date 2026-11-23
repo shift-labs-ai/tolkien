@@ -94,6 +94,10 @@ impl Matcher for Currency {
         BASE_AND_NUMBER
     }
 
+    fn can_start(&self, first: char) -> bool {
+        is_currency_symbol(first) || is_digit(first) || is_full_stop(first)
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         let start = cur.pos();
         if symbol_first(cur) {

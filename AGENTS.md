@@ -27,7 +27,10 @@ there.
 
 - `src/cursor.rs`: `Cursor`, a byte position in a `&str` that matchers move
 - `src/matcher.rs`: the `Matcher` trait (`kind`, `overrides`, `matches`)
-- `src/lexer.rs`: `Lexer` (orders the matchers, runs them), `Token`, `Error`
+- `src/lexer.rs`: `Lexer` (orders the matchers, runs them, also on several
+  threads), `Token`, `Error`
+- `src/shortcuts.rs`: what the default lexer answers for plain words, white
+  space and punctuation without asking a matcher
 - `src/matchers/`: one file per built-in matcher; `mod.rs` holds `all()`,
   the default order
 - `src/trie.rs`: `Trie`, longest-word lookup for month and currency names
@@ -80,9 +83,27 @@ there.
   `docs/charsets.md`. Never edit `src/unicode_tables.rs`.
 - **Behaviour changes against fastlex** are listed in the README. Add to
   that table when a matcher is changed on purpose.
-- **A matcher reads forward only.** It never looks at what stands before
-  its start, so that lexing can begin at any token boundary. The fuzzer's
-  `no-left-context` check holds it to that.
+- **A matcher reads forward only.** A cursor shows nothing before the place
+  it was created at, so a token depends only on the text from its start on.
+  Lexing can begin at any token boundary, which is what `tokens_parallel`
+  relies on. The fuzzer's `no-left-context` and `parallel` checks hold the
+  lexer to that.
+- **Speed never changes a token.** Three layers make the lexer fast: one
+  generated lookup table for all character classes (`chars.rs`),
+  `Matcher::can_start` so that a matcher is asked only where it can start,
+  and `shortcuts.rs` for the default lexer. The last two restate what the
+  matchers do. `can_start` must be true for the first character of anything
+  `matches` accepts, and a shortcut must answer what the matchers, asked in
+  order, would. Both are compared with asking every matcher at every
+  position: `shortcuts_and_hints_change_no_token` and the random-text test
+  in `tests/lexer.rs`, and the fuzzer's `reference` check. **A new matcher,
+  or a matcher that takes a new first character or a new kind of text, has
+  to be checked against every rule in `shortcuts.rs`**; each rule names the
+  matchers it has ruled out.
+- **Measure before and after.** `cargo run --release --example throughput`
+  on the corpora, best of many rounds: a short file measured few times is
+  noise. A repeated text flatters the result, because the processor learns
+  it; use real text.
 - **A change to a matcher is a change to three places:** the matcher, its
   rules in `shape` in `examples/fuzz.rs`, and the README. Then run the
   fuzzer and `tools/evaluate.py` on the corpora and compare the scores with
@@ -101,4 +122,8 @@ there.
    and to the long runs.
 5. Add the kind's rules to `shape` in `examples/fuzz.rs` and pieces that
    start or break it to the fuzzer's `DICTIONARY`.
-6. Add a row to the matcher table in the README.
+6. Give it a `can_start`, and read the rules of `src/shortcuts.rs`: each
+   one that covers a character the new matcher can start with must rule it
+   out or step aside. Add texts on that edge to
+   `shortcuts_and_hints_change_no_token`.
+7. Add a row to the matcher table in the README.

@@ -10,7 +10,13 @@
 //! A check is a property that must hold for any text:
 //!
 //! - `coverage`: the tokens cover the text with no gap, overlap or empty token.
+//! - `reference`: the tokens are those of asking every matcher at every
+//!   position, in order. The lexer skips matchers that cannot start with a
+//!   character and knows the commonest tokens outright; neither may change
+//!   an answer.
 //! - `kind`: no `OTHER`, `LETTER` or `DIGIT` token appears.
+//! - `parallel`: lexed in pieces on several threads, the text gives the
+//!   same tokens. One text in sixteen is checked: threads are slow to start.
 //! - `shape`: a token has the form its kind documents. The rules are written
 //!   here a second time, on purpose, so that they do not share a bug with
 //!   the matchers.
@@ -52,6 +58,36 @@ impl Checker {
         }
     }
 
+    /// The first token of `tokens` that is not the one found by asking every
+    /// matcher at its position, in the lexer's order: its kind, and both
+    /// tokens as text.
+    fn differs_from_reference(
+        &self,
+        text: &str,
+        tokens: &[Token<'_>],
+    ) -> Option<(&'static str, String)> {
+        let mut pos = 0;
+        for token in tokens {
+            let rest = &text[pos..];
+            let (kind, len) = self
+                .matchers
+                .iter()
+                .find_map(|matcher| Some((matcher.kind(), matcher.match_prefix(rest)?.len())))
+                .unwrap_or_else(|| (OTHER, rest.chars().next().map_or(0, char::len_utf8)));
+            if (token.kind, token.start, token.end) != (kind, pos, pos + len) {
+                let detail = format!(
+                    "{} {:?} where the matchers give {kind} {:?}",
+                    token.kind,
+                    token.text,
+                    &rest[..len]
+                );
+                return Some((token.kind, detail));
+            }
+            pos += len;
+        }
+        None
+    }
+
     /// The first broken check of `text`, if there is one. `rng` picks the
     /// tokens that the sampled checks look at.
     fn check(&self, text: &str, rng: &mut Rng) -> Option<Finding> {
@@ -78,6 +114,43 @@ impl Checker {
                 kind: "",
                 detail,
             });
+        }
+
+        if let Some(detail) = self.differs_from_reference(text, &tokens) {
+            let kind = detail.0;
+            return Some(Finding {
+                check: "reference",
+                kind,
+                detail: detail.1,
+            });
+        }
+
+        if rng.below(16) == 0 {
+            let pieces = 2 + rng.below(7);
+            let parallel = self.lexer.tokens_parallel_on(text, pieces);
+            if let Some((ours, theirs)) = tokens.iter().zip(&parallel).find(|(a, b)| a != b) {
+                let detail = format!(
+                    "in {pieces} pieces {} {:?}, whole {} {:?}",
+                    theirs.kind, theirs.text, ours.kind, ours.text
+                );
+                return Some(Finding {
+                    check: "parallel",
+                    kind: ours.kind,
+                    detail,
+                });
+            }
+            if parallel.len() != tokens.len() {
+                let detail = format!(
+                    "{} tokens in {pieces} pieces, {} whole",
+                    parallel.len(),
+                    tokens.len()
+                );
+                return Some(Finding {
+                    check: "parallel",
+                    kind: "",
+                    detail,
+                });
+            }
         }
 
         for token in &tokens {

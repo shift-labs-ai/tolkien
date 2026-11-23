@@ -142,6 +142,7 @@ fn tokens_cover_random_text() {
             .map(|_| ALPHABET[next() % ALPHABET.len()])
             .collect();
         assert_covers(&lexer, &text);
+        assert_eq!(spans(&lexer, &text), reference(&text), "{text:?}");
         // WORD, ALPHA_NUMERIC_SEQUENCE and LIKE_NUMBER take every run that
         // LETTER and DIGIT would.
         assert!(
@@ -151,6 +152,252 @@ fn tokens_cover_random_text() {
             "{text:?}"
         );
     }
+}
+
+/// The tokens of `text` found by asking every built-in matcher at every
+/// position, in the default order: what the default lexer must give, however
+/// it gets there.
+fn reference(text: &str) -> Vec<(&'static str, usize, usize)> {
+    let matchers = matchers::all();
+    let mut tokens = Vec::new();
+    let mut pos = 0;
+    while pos < text.len() {
+        let rest = &text[pos..];
+        let (kind, len) = matchers
+            .iter()
+            .find_map(|matcher| Some((matcher.kind(), matcher.match_prefix(rest)?.len())))
+            .unwrap_or_else(|| (OTHER, rest.chars().next().map_or(0, char::len_utf8)));
+        tokens.push((kind, pos, pos + len));
+        pos += len;
+    }
+    tokens
+}
+
+fn spans(lexer: &Lexer, text: &str) -> Vec<(&'static str, usize, usize)> {
+    lexer
+        .tokens(text)
+        .map(|t| (t.kind, t.start, t.end))
+        .collect()
+}
+
+/// The default lexer skips matchers that cannot start with a character, and
+/// knows plain words, white space and punctuation without asking a matcher.
+/// Neither may change a token. Each text here sits on the edge of a rule.
+#[test]
+fn shortcuts_and_hints_change_no_token() {
+    let fast = Lexer::default();
+    let hinted = Lexer::new(matchers::all()).unwrap();
+    for text in [
+        // A word, and what may follow it.
+        "word",
+        "word ",
+        "word.",
+        "word,",
+        "word:",
+        "word?",
+        "word!",
+        "word)",
+        "word;",
+        "word\"",
+        "word-",
+        "word-word",
+        "word'",
+        "don't",
+        "word_",
+        "word1",
+        "word\n",
+        "word\t",
+        "wordé",
+        "word\u{a0}x",
+        "word。",
+        "a",
+        "ab",
+        "abc",
+        "abcdefgh",
+        "abcdefghi.",
+        "ABCDEFGHIJKLMNOPQ)",
+        // A month name is the start of a date.
+        "May",
+        "May 5, 2009",
+        "may 5, 2009",
+        "MAY 5, 2009",
+        "mAy 5, 2009",
+        "Mayor 5, 2009",
+        "Feb. 17, 2009",
+        "March",
+        "Mar",
+        "Ma",
+        "Marc 5 2009",
+        "december 1 2009",
+        "Sept 5 2009",
+        // An email address and a URL start with letters too.
+        "a.b@c.de",
+        "a+b@c.de",
+        "a@b.c",
+        "ab.cd",
+        "ab.cd@",
+        "ab+",
+        "name@",
+        "x.y.z@example.com.",
+        "http://x",
+        "https://x.",
+        "http:",
+        "http:/x",
+        "www.x",
+        "www.",
+        "www",
+        "httpx://x",
+        "h",
+        "w.",
+        // White space and line breaks.
+        " ",
+        "  ",
+        " \t ",
+        " \n ",
+        "\n",
+        "\n\n",
+        "\r\n",
+        "\n ",
+        "\n\u{85}",
+        " \u{a0}",
+        "\t\u{2028}",
+        "\u{b}\u{c}",
+        " x",
+        "\nx",
+        // Marks, and the marks a number, a hashtag, a mention or an amount starts with.
+        "(",
+        ")",
+        "\"",
+        ";",
+        "/",
+        "\\",
+        "'",
+        "*",
+        "&",
+        "^",
+        "`",
+        "{",
+        "\u{0}",
+        "\u{7f}",
+        ".",
+        ",",
+        "-",
+        "_",
+        "+",
+        "%",
+        "=",
+        "<",
+        ">",
+        "|",
+        "~",
+        ". ",
+        ".x",
+        ".5",
+        "..5",
+        "...5",
+        ",5",
+        "-.5",
+        "--5",
+        "-x",
+        "-(",
+        "-#",
+        "-$",
+        "-.",
+        ".-",
+        "-٣",
+        "-½",
+        "#",
+        "#tag",
+        "#1",
+        "# ",
+        "@",
+        "@me",
+        "@ ",
+        "$",
+        "$5",
+        "$ ",
+        "$$",
+        "€5",
+        "%5",
+        "5%",
+        // Digits are left to the matchers.
+        "5",
+        "5 ",
+        "5 USD",
+        "5 May 2009",
+        "4 PM",
+        "2009 02 17",
+        "17.02.2009",
+        "10:30",
+        "5)",
+        "5\nUSD",
+        // Outside ASCII.
+        "é",
+        "été",
+        "naïve.",
+        "שלום עולם",
+        "日本語のテキスト。",
+        "Привет, мир!",
+        "“quoted”",
+        "‘a’",
+        "—",
+        "–5",
+        "１２３",
+        "٣٥",
+        "½",
+        "€",
+        "₪20",
+        "\u{301}",
+        "a\u{301}b",
+        "👍",
+        "👩\u{200d}💻",
+        "ʼ",
+        "x’s",
+        "’tis",
+    ] {
+        let expected = reference(text);
+        assert_eq!(
+            spans(&fast, text),
+            expected,
+            "the default lexer on {text:?}"
+        );
+        assert_eq!(
+            spans(&hinted, text),
+            expected,
+            "the hinted lexer on {text:?}"
+        );
+    }
+}
+
+/// Cut into any number of pieces, a text gives the tokens it gives whole.
+/// With as many pieces as bytes, every place in the text is a cut, also the
+/// middle of every token and of every character.
+#[test]
+fn parallel_lexing_gives_the_same_tokens() {
+    let lexer = Lexer::default();
+    for text in [
+        "",
+        "a",
+        "Dana (dana@acme.com) paid $1,250.50 on Feb 17, 2009 at 8:05 PM, see https://acme.com/inv?id=7.",
+        "2022-01-06T08:42:27.549090+02:00 5 USD 17 February, 2009 10:30:15 pm x@y.zz www.example.com/a_(b)",
+        "one   long    run     of      spaces\n\n\n\nand line breaks \t\t\t and-hyphens--and___underscores",
+        "שלום עולם, 17 בפברואר 2009. 日本語のテキスト。 “quoted” — naïve café 👩\u{200d}💻 ½ ٣٥",
+    ] {
+        let whole: Vec<Token<'_>> = lexer.tokens(text).collect();
+        for threads in 0..=text.len() + 1 {
+            assert_eq!(
+                lexer.tokens_parallel_on(text, threads),
+                whole,
+                "{threads} threads on {text:?}"
+            );
+        }
+        assert_eq!(lexer.tokens_parallel(text), whole);
+    }
+    let long =
+        "A sentence with 3 numbers, 1 date (Feb 17, 2009) and an address: a@b.cd. ".repeat(20_000);
+    let whole: Vec<Token<'_>> = lexer.tokens(&long).collect();
+    assert_eq!(lexer.tokens_parallel(&long), whole);
+    assert_eq!(lexer.tokens_parallel_on(&long, 7), whole);
 }
 
 #[test]

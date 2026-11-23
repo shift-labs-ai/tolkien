@@ -46,6 +46,8 @@ a Kotlin library. It has no dependencies and builds for `wasm32`.
   character no matcher claims becomes a one-character `OTHER` token.
 - **Linear time.** No built-in matcher reads far ahead and then gives up, so
   the time to lex a text grows with its length, whatever the text holds.
+- **Forward only.** A token depends only on the text from its start on, so
+  a text can be lexed from any token boundary, and in pieces.
 
 Offsets are byte offsets into the UTF-8 text.
 
@@ -133,6 +135,11 @@ impl Matcher for EnvVar {
         &[matchers::CURRENCY]
     }
 
+    // Optional: the lexer then asks this matcher only at a `$`.
+    fn can_start(&self, first: char) -> bool {
+        first == '$'
+    }
+
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
         cur.advance_if(|c| c == '$')
             && cur.advance_while(|c| c.is_ascii_uppercase() || c == '_') > 0
@@ -143,6 +150,10 @@ let mut list = matchers::all();
 list.push(Box::new(EnvVar));
 let lexer = Lexer::new(list).unwrap();
 ```
+
+A lexer built with `Lexer::new` asks the matchers for every token.
+`Lexer::default()` gives the same tokens as `Lexer::new(matchers::all())`,
+two to three times faster, because it knows the built-in matchers.
 
 ## Command line
 
@@ -166,14 +177,40 @@ pattern over character names (`FULL STOP`, `COMMA`, `QUESTION MARK`).
 
 ## Speed
 
-About 57 MB/s and 21 million tokens per second with every built-in matcher,
-on an Apple M5 laptop, over 1.2 MB of English technical prose. The slowest
-input measured is a long run of one short piece, such as `a.` or `1:`, at
-about 19 MB/s.
+With every built-in matcher, on an Apple M5 laptop with ten cores:
+
+| Text | Size | One thread | Every core, collected |
+|---|---:|---:|---:|
+| Court cases (TAB) | 0.7 MB | 506 MB/s | 686 MB/s |
+| Sentences with personal data (ai4privacy, English) | 7.6 MB | 374 MB/s | 1,015 MB/s |
+| Documents converted to markdown | 0.6 MB | 341 MB/s | |
+| Wikipedia in 24 languages and scripts | 2.9 MB | 343 MB/s | 1,014 MB/s |
+
+That is 120 to 170 million tokens a second on one thread. The slowest input
+measured is a long run of single digits and spaces, at about 50 MB/s.
 
 ```bash
 cargo run --release --example throughput -- FILE
 ```
+
+Three things make it fast, and none of them changes a token:
+
+- **One table for every character class.** A character is looked up once
+  and tested against any number of classes. The table is generated.
+- **A matcher is asked only where it can start.** `Matcher::can_start` says
+  which first characters a matcher takes; the lexer lists, for each ASCII
+  character, the matchers worth asking. A space asks one matcher, not
+  sixteen.
+- **The default lexer knows the commonest tokens.** A plain word, a run of
+  white space and a punctuation mark are most of a text, and
+  `src/shortcuts.rs` reads them straight from the bytes, eight at a time
+  for a word. It restates what the matchers would answer together, so the
+  tests and the fuzzer compare it with asking every matcher at every
+  position.
+
+`Lexer::tokens_parallel` lexes a long text on every core: the text is cut
+into pieces, each thread lexes one, and the pieces are joined where their
+tokens meet. A cut may fall inside a token; the join does not.
 
 ## Differences from fastlex
 

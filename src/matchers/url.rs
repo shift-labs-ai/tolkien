@@ -21,6 +21,13 @@ const PREFIXES: &[&str] = &["http://", "https://", "www."];
 /// `https://example.com/a_(b)` keeps its bracket.
 pub struct LikeUrl;
 
+/// True when `bytes` starts with one of the prefixes of a URL.
+pub(crate) fn has_prefix(bytes: &[u8]) -> bool {
+    PREFIXES
+        .iter()
+        .any(|prefix| bytes.starts_with(prefix.as_bytes()))
+}
+
 fn is_sentence_punctuation(c: char) -> bool {
     matches!(c, '.' | ',' | ';' | ':' | '!' | '?' | '\'')
 }
@@ -45,6 +52,10 @@ impl Matcher for LikeUrl {
 
     fn overrides(&self) -> &'static [&'static str] {
         BASE
+    }
+
+    fn can_start(&self, first: char) -> bool {
+        PREFIXES.iter().any(|prefix| prefix.starts_with(first))
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
