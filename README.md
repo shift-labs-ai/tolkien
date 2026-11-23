@@ -39,9 +39,9 @@ a Kotlin library. It has no dependencies and builds for `wasm32`.
   expressions.
 - **First match wins.** At each position the lexer tries its matchers in
   order, takes the first that matches, and continues after that token.
-- **Order.** A matcher lists the kinds it overrides and is tried before them.
-  Between matchers that do not override each other, the one given first is
-  tried first.
+- **Order.** Matchers are tried in the order they are given. A matcher may
+  list kinds it overrides: it is then tried before them, wherever it was
+  given, and no other matcher changes place.
 - **Full coverage.** Every byte of the text belongs to exactly one token. A
   character no matcher claims becomes a one-character `OTHER` token.
 - **Linear time.** No built-in matcher reads far ahead and then gives up, so
@@ -122,40 +122,80 @@ cargo build --release && python3 tools/evaluate.py                # labelled spa
 
 ## Your own matcher
 
+A matcher is a struct with a kind and a function that reads from a cursor.
+`Lexer::with` adds matchers to the built-in ones and tries them first:
+
 ```rust
-use tolkien::{matchers, Cursor, Lexer, Matcher};
+use tolkien::{Cursor, Lexer, Matcher};
 
-/// `$NAME`, an environment variable reference.
-struct EnvVar;
+/// Four numbers from 0 to 255 joined by full stops: `192.168.1.20`.
+struct Ipv4;
 
-impl Matcher for EnvVar {
+impl Matcher for Ipv4 {
     fn kind(&self) -> &'static str {
-        "ENV_VAR"
+        "IPV4"
     }
 
-    fn overrides(&self) -> &'static [&'static str] {
-        &[matchers::CURRENCY]
-    }
-
-    // Optional: the lexer then asks this matcher only at a `$`.
+    // Where a token can start. Without it the matcher is asked at every
+    // token of the text.
     fn can_start(&self, first: char) -> bool {
-        first == '$'
+        first.is_ascii_digit()
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
-        cur.advance_if(|c| c == '$')
-            && cur.advance_while(|c| c.is_ascii_uppercase() || c == '_') > 0
+        for part in 0..4 {
+            if part > 0 && !cur.advance_if(|c| c == '.') {
+                return false;
+            }
+            let start = cur.pos();
+            let digits = cur.advance_while(|c| c.is_ascii_digit());
+            let value = cur.since(start).parse::<u16>();
+            if !(1..=3).contains(&digits) || value.map_or(true, |value| value > 255) {
+                return false;
+            }
+        }
+        // Not the start of something longer.
+        !cur.followed_by(|c| c == '.', |c| c.is_ascii_digit())
+            && !cur.peek().is_some_and(char::is_alphanumeric)
     }
 }
 
-let mut list = matchers::all();
-list.push(Box::new(EnvVar));
-let lexer = Lexer::new(list).unwrap();
+// A matcher is tested on its own with `match_prefix`.
+assert_eq!(Ipv4.match_prefix("10.0.0.255, and"), Some("10.0.0.255"));
+assert_eq!(Ipv4.match_prefix("10.0.0.256"), None);
+
+let lexer = Lexer::with([Box::new(Ipv4) as Box<dyn Matcher>]).unwrap();
+let tokens: Vec<_> = lexer.tokens("from 192.168.1.20").map(|t| (t.kind, t.text)).collect();
+assert_eq!(tokens[2], ("IPV4", "192.168.1.20"));
 ```
 
-A lexer built with `Lexer::new` asks the matchers for every token.
-`Lexer::default()` gives the same tokens as `Lexer::new(matchers::all())`,
-two to three times faster, because it knows the built-in matchers.
+What to know:
+
+- **Order is the order you give.** The matchers passed to `Lexer::with`
+  are tried before the built-in ones, first to last, so they win where
+  both match. Nothing has to be declared. `overrides` is for a matcher
+  that is given later than one it must beat: it moves up to just before
+  it, and no other matcher changes place.
+- **`can_start` is a rule, not a hint.** The matcher is asked only where it
+  answers `true`, by the lexer and by `match_prefix` alike. It is also
+  what keeps the lexer fast: with five added matchers that say where they
+  start, the texts of the table below lex at 300 to 370 MB/s; with one
+  more that can start anywhere, at 140 to 210 MB/s.
+- **The cursor reads forward.** `peek`, `advance_if`, `advance_while`,
+  `advance_exactly` and `advance_str` move it; `followed_by` looks two
+  characters ahead without moving; `back_while` steps back over
+  punctuation at the end; `since` gives the text passed; `set_pos` returns
+  to a saved place. It shows nothing before the token.
+- **Fail early.** A matcher that reads a long run and then fails is asked
+  again one character later. Bound what it reads before it can fail.
+- **`Trie`** finds the longest of many words at the cursor, and
+  `tolkien::chars` has the character classes the built-in matchers use.
+
+[tests/custom.rs](tests/custom.rs) has four matchers written this way: a
+card number, an IP address, a MAC address and a list of keywords.
+
+`Lexer::new` takes any list of matchers and nothing else: no built-in
+matcher is added, and each matcher is asked for every token it can start.
 
 ## Command line
 
@@ -183,12 +223,12 @@ With every built-in matcher, on an Apple M5 laptop with ten cores:
 
 | Text | Size | One thread | Every core, collected |
 |---|---:|---:|---:|
-| Court cases (TAB) | 0.7 MB | 655 MB/s | 830 MB/s |
-| Sentences with personal data (ai4privacy, English) | 7.6 MB | 505 MB/s | 950 to 1,150 MB/s |
-| Documents converted to markdown | 0.6 MB | 540 MB/s | 500 MB/s |
+| Court cases (TAB) | 0.7 MB | 605 MB/s | 880 MB/s |
+| Sentences with personal data (ai4privacy, English) | 7.6 MB | 480 MB/s | 1,200 MB/s |
+| Documents converted to markdown | 0.6 MB | 530 MB/s | 500 MB/s |
 | Wikipedia in 24 languages and scripts | 2.9 MB | 485 MB/s | 1,300 MB/s |
 
-That is 115 to 230 million tokens a second on one thread. The figures are
+That is 115 to 225 million tokens a second on one thread. The figures are
 the best of 40 runs and move by a few percent between runs. On every core,
 the two small files gain little or nothing, because starting the threads
 is a large part of a millisecond. The slowest inputs measured are long
@@ -227,7 +267,7 @@ The design is the same. These behaviours changed:
 |---|---|---|
 | No matcher matches | The parser loops forever | The character becomes an `OTHER` token |
 | A match of length zero | The parser loops forever | Ignored |
-| Order of unrelated matchers | Not defined: it fell out of how the sort walked the matchers | The one given first is tried first |
+| Order of matchers | Not defined between unrelated matchers: it fell out of how the sort walked them | The order given; an overriding matcher moves up to just before the first it overrides |
 | Offsets | UTF-16 code units | UTF-8 bytes |
 | Characters above U+FFFF | Seen as two surrogates | Seen as one character |
 | Word lists (months, currencies) | Any prefix of a word counted as the word | The whole word must match |

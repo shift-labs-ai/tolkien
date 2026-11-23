@@ -152,6 +152,13 @@ impl<'t> Cursor<'t> {
         }
     }
 
+    /// Moves past exactly `count` characters that `pred` accepts and returns
+    /// `true`. With fewer of them at the cursor, returns `false` and leaves
+    /// the cursor after those it passed.
+    pub fn advance_exactly(&mut self, count: usize, pred: impl Fn(char) -> bool) -> bool {
+        (0..count).all(|_| self.advance_if(&pred))
+    }
+
     /// Moves past `s` if the rest of the text starts with it.
     pub fn advance_str(&mut self, s: &str) -> bool {
         if self.rest().starts_with(s) {
@@ -224,6 +231,16 @@ mod tests {
         let mut cur = Cursor::new("ééé1");
         assert_eq!(cur.advance_while(|c| c == 'é'), 3);
         assert_eq!(cur.pos(), 6);
+    }
+
+    #[test]
+    fn advance_exactly_takes_that_many_and_no_more() {
+        let mut cur = Cursor::new("1234x");
+        assert!(cur.advance_exactly(2, |c| c.is_ascii_digit()));
+        assert_eq!(cur.pos(), 2);
+        assert!(!cur.advance_exactly(3, |c| c.is_ascii_digit()));
+        assert_eq!(cur.pos(), 4);
+        assert!(cur.advance_exactly(0, |_| false));
     }
 
     #[test]

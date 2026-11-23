@@ -686,7 +686,8 @@ fn overrides_order_a_chain_and_ignore_unknown_kinds() {
         probe("A", &["B"], never),
     ])
     .unwrap();
-    assert_eq!(lexer.kinds().collect::<Vec<_>>(), ["D", "A", "B", "C"]);
+    // A and B move up to stand before C. D keeps its place after C.
+    assert_eq!(lexer.kinds().collect::<Vec<_>>(), ["A", "B", "C", "D"]);
 }
 
 #[test]

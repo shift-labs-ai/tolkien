@@ -28,7 +28,8 @@ there.
 - `src/cursor.rs`: `Cursor`, a byte position in a `&str` that matchers move
 - `src/matcher.rs`: the `Matcher` trait (`kind`, `overrides`, `matches`)
 - `src/lexer.rs`: `Lexer` (orders the matchers, runs them, also on several
-  threads), `Token`, `Error`
+  threads; `new` for any matchers, `with` for the built-in ones and more),
+  `Token`, `Error`
 - `src/shortcuts.rs`: what the default lexer answers for plain words,
   numbers, white space and punctuation without asking every matcher
 - `src/matchers/`: one file per built-in matcher; `mod.rs` holds `all()`,
@@ -44,6 +45,8 @@ there.
 - `tests/support/reference.rs`: the plain way to lex, every matcher asked
   at every position; the tests and the fuzzer both include it and compare
   the lexer with it
+- `tests/custom.rs`: matchers written as a user writes them and added with
+  `Lexer::with`, compared with asking every matcher
 - `tests/cli.rs`: tests of the command
 - `tools/verify.sh`: every check, for CI and for a person
 - `examples/fuzz.rs`: the fuzzer; its `shape` function states every kind's
@@ -76,9 +79,16 @@ there.
 - **Not the start of something longer.** A token of a fixed shape is not
   taken when its run plainly goes on: a date before the same separator and
   a digit, a time before a colon and more. `Cursor::followed_by` asks.
-- **Order.** A matcher is tried before the kinds in its `overrides`. Other
-  matchers keep the order of `matchers::all()`, most specific first. Adding
-  a matcher means choosing its place there.
+- **Order.** Matchers are tried in the order given; one that overrides
+  another moves up to just before it, and no matcher moves down. The
+  built-in ones keep the order of `matchers::all()`, most specific first:
+  adding a built-in matcher means choosing its place there.
+- **Built on from outside.** `Lexer::with` puts a user's matchers before
+  the built-in ones and keeps the shortcuts: the added matchers are asked
+  first, each where it `can_start`. `tests/custom.rs` is written with the
+  public interface only and is the worked example; keep it compiling when
+  that interface changes, and add to it what a new building block makes
+  possible.
 - **Coverage.** The tokens of a text cover it with no gaps. `tests/lexer.rs`
   checks this on fixed and on random text; keep both passing.
 - **Character sets are generated.** To change one, change its rule in

@@ -29,7 +29,7 @@ pub struct Iso8601;
 
 /// Exactly `n` digits.
 fn digits(cur: &mut Cursor<'_>, n: usize) -> bool {
-    (0..n).all(|_| cur.advance_if(|c| c.is_ascii_digit()))
+    cur.advance_exactly(n, |c| c.is_ascii_digit())
 }
 
 fn one(cur: &mut Cursor<'_>, expected: char) -> bool {

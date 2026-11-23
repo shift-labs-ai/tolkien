@@ -40,13 +40,15 @@ pub trait Matcher: Send + Sync {
         &[]
     }
 
-    /// Whether a token of this kind can start with `first`. The lexer asks
-    /// once for every ASCII character when it is built, and then calls
-    /// [`matches`](Matcher::matches) only where the answer is `true`, so a
-    /// precise answer makes lexing faster.
+    /// Whether a token of this kind can start with `first`.
+    /// [`matches`](Matcher::matches) is asked only where the answer is
+    /// `true`, by a lexer and by [`match_prefix`](Matcher::match_prefix)
+    /// alike, so the matcher finds no token anywhere else.
     ///
-    /// The default, `true`, is always correct. An override must answer `true`
-    /// for the first character of every text that `matches` accepts.
+    /// The default, `true`, asks `matches` at every character. A precise
+    /// answer makes lexing much faster: a lexer asks once for every ASCII
+    /// character when it is built, and [`Lexer::with`](crate::Lexer::with)
+    /// keeps its shortcuts wherever no added matcher can start.
     fn can_start(&self, _first: char) -> bool {
         true
     }
@@ -59,8 +61,14 @@ pub trait Matcher: Send + Sync {
     /// shows nothing before it.
     fn matches(&self, cur: &mut Cursor<'_>) -> bool;
 
-    /// The token at the start of `text`, if `text` starts with one.
+    /// The token at the start of `text`, if `text` starts with one: what a
+    /// lexer that holds only this matcher gives first. It is the way to
+    /// test a matcher on its own.
     fn match_prefix<'t>(&self, text: &'t str) -> Option<&'t str> {
+        let first = text.chars().next()?;
+        if !self.can_start(first) {
+            return None;
+        }
         match_at(self, text, 0).map(|end| &text[..end])
     }
 }
@@ -79,4 +87,33 @@ pub(crate) fn match_at<M: Matcher + ?Sized>(
 ) -> Option<usize> {
     let mut cur = Cursor::at(text, start);
     (matcher.matches(&mut cur) && cur.pos() > start).then(|| cur.pos())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One or more `x`, which says it starts with a capital only.
+    struct Capital;
+
+    impl Matcher for Capital {
+        fn kind(&self) -> &'static str {
+            "CAPITAL"
+        }
+
+        fn can_start(&self, first: char) -> bool {
+            first == 'X'
+        }
+
+        fn matches(&self, cur: &mut Cursor<'_>) -> bool {
+            cur.advance_while(|c| c.eq_ignore_ascii_case(&'x')) > 0
+        }
+    }
+
+    #[test]
+    fn a_matcher_finds_no_token_where_it_cannot_start() {
+        assert_eq!(Capital.match_prefix("Xxx!"), Some("Xxx"));
+        assert_eq!(Capital.match_prefix("xxx"), None);
+        assert_eq!(Capital.match_prefix(""), None);
+    }
 }

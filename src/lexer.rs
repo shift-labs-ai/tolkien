@@ -62,9 +62,10 @@ impl std::error::Error for Error {}
 ///
 /// # Order
 ///
-/// A matcher is tried before every matcher it [overrides](Matcher::overrides).
-/// Between matchers that do not override each other, the one given first is
-/// tried first.
+/// Matchers are tried in the order they are given, with one exception: a
+/// matcher that [overrides](Matcher::overrides) another is tried before it,
+/// and moves up to just before it if it was given later. No matcher moves
+/// down, so adding a matcher never changes the order of the others.
 ///
 /// ```
 /// use tolkien::Lexer;
@@ -92,9 +93,15 @@ pub struct Lexer {
     /// character `c` is `candidates[starts[c]..starts[c + 1]]`.
     candidates: Vec<u16>,
     starts: [u32; 129],
-    /// True for the default lexer, whose commonest tokens `shortcuts` knows
-    /// without asking the matchers.
-    shortcuts: bool,
+    /// How many matchers stand before the built-in ones, when those are
+    /// all there in their order. `shortcuts` then knows the commonest
+    /// tokens without asking the built-in matchers, wherever none of the
+    /// matchers before them finds one.
+    added: Option<usize>,
+    /// For every byte a token can start with, whether `shortcuts` is asked
+    /// at once: none of the matchers before the built-in ones can start
+    /// with it.
+    shortcut_at: [bool; 256],
 }
 
 impl Lexer {
@@ -128,14 +135,86 @@ impl Lexer {
             matchers,
             candidates,
             starts,
-            shortcuts: false,
+            added: None,
+            shortcut_at: [false; 256],
         })
     }
 
+    /// A lexer with every built-in matcher, and `matchers` tried before
+    /// them.
+    ///
+    /// This is the lexer to build on: it gives the tokens of
+    /// `Lexer::new(matchers.chain(matchers::all()))` and keeps what makes
+    /// [`Lexer::default`] fast. The matchers given are asked first, each
+    /// where it [can start](Matcher::can_start), and the rest of the work
+    /// is that of the default lexer. So the cost of a matcher is the cost
+    /// of asking it: one that says where it can start costs little, and one
+    /// that does not is asked at every token.
+    ///
+    /// ```
+    /// use tolkien::{Cursor, Lexer, Matcher};
+    ///
+    /// /// `AKIA` and sixteen capital letters or digits.
+    /// struct AccessKey;
+    ///
+    /// impl Matcher for AccessKey {
+    ///     fn kind(&self) -> &'static str {
+    ///         "ACCESS_KEY"
+    ///     }
+    ///
+    ///     fn can_start(&self, first: char) -> bool {
+    ///         first == 'A'
+    ///     }
+    ///
+    ///     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
+    ///         cur.advance_str("AKIA")
+    ///             && cur.advance_exactly(16, |c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    ///             && !cur.peek().is_some_and(char::is_alphanumeric)
+    ///     }
+    /// }
+    ///
+    /// let lexer = Lexer::with([Box::new(AccessKey) as Box<dyn Matcher>]).unwrap();
+    /// let kinds: Vec<_> = lexer.tokens("key AKIAIOSFODNN7EXAMPLE").map(|t| t.kind).collect();
+    /// assert_eq!(kinds, ["WORD", "WHITE_SPACE", "ACCESS_KEY"]);
+    /// ```
+    pub fn with(matchers: impl IntoIterator<Item = Box<dyn Matcher>>) -> Result<Self, Error> {
+        let mut list: Vec<_> = matchers.into_iter().collect();
+        let added = list.len();
+        list.extend(matchers::all());
+        let mut lexer = Self::new(list)?;
+        // An added matcher may override a built-in one and so stay before
+        // it; a built-in one overrides no kind an added one can have.
+        let (first, built_in) = lexer.matchers.split_at(added);
+        let in_order = built_in
+            .iter()
+            .map(|matcher| matcher.kind())
+            .eq(matchers::all().iter().map(|matcher| matcher.kind()));
+        if in_order {
+            for byte in 0..=255u8 {
+                // A byte outside ASCII starts many characters: with added
+                // matchers, the character is asked about when it is read.
+                lexer.shortcut_at[byte as usize] = if byte.is_ascii() {
+                    !first.iter().any(|matcher| matcher.can_start(byte as char))
+                } else {
+                    added == 0
+                };
+            }
+            lexer.added = Some(added);
+        }
+        Ok(lexer)
+    }
+
     /// The kind and the end of the token that starts at byte offset `start`
-    /// of `text`, whose first character is `first`.
+    /// of `text`, whose first character is `first`: the first of the
+    /// matchers from index `from` on that finds one.
     #[inline]
-    fn token_at(&self, text: &str, start: usize, first: char) -> (&'static str, usize) {
+    fn token_at(
+        &self,
+        text: &str,
+        start: usize,
+        first: char,
+        from: usize,
+    ) -> (&'static str, usize) {
         let attempt = |matcher: &dyn Matcher| {
             let end = match_at(matcher, text, start)?;
             Some((matcher.kind(), end))
@@ -145,14 +224,41 @@ impl Lexer {
                 self.starts[first as usize] as usize..self.starts[first as usize + 1] as usize;
             self.candidates[list]
                 .iter()
+                .filter(|&&index| index as usize >= from)
                 .find_map(|&index| attempt(self.matchers[index as usize].as_ref()))
         } else {
-            self.matchers
+            self.matchers[from..]
                 .iter()
                 .filter(|matcher| matcher.can_start(first))
                 .find_map(|matcher| attempt(matcher.as_ref()))
         };
         found.unwrap_or((OTHER, start + first.len_utf8()))
+    }
+
+    /// The kind and the end of the token that starts at byte offset `start`
+    /// of `text`, where no shortcut answered at once. With matchers before
+    /// the built-in ones, those are asked, then the shortcuts, then the
+    /// built-in ones.
+    ///
+    /// It is marked cold to keep it out of the loop over the tokens, which
+    /// is slower with it inside.
+    #[cold]
+    fn token_from_matchers(&self, text: &str, start: usize) -> (&'static str, usize) {
+        let first = text[start..]
+            .chars()
+            .next()
+            .expect("the text has not ended");
+        let added = match self.added {
+            // The shortcut was asked already, or none is in use.
+            Some(0) | None => return self.token_at(text, start, first, 0),
+            Some(added) => added,
+        };
+        self.matchers[..added]
+            .iter()
+            .filter(|matcher| matcher.can_start(first))
+            .find_map(|matcher| Some((matcher.kind(), match_at(matcher.as_ref(), text, start)?)))
+            .or_else(|| shortcuts::token(text, start))
+            .unwrap_or_else(|| self.token_at(text, start, first, added))
     }
 
     /// The kinds of this lexer's matchers, in the order they are tried.
@@ -268,13 +374,9 @@ impl Default for Lexer {
     /// It gives the same tokens as `Lexer::new(matchers::all())` and is
     /// two to three times faster: it knows what the built-in matchers
     /// answer for plain words, numbers, white space and punctuation without
-    /// asking each of them.
+    /// asking each of them. [`Lexer::with`] adds matchers to it.
     fn default() -> Self {
-        let lexer = Self::new(matchers::all()).expect("the built-in matchers form a valid lexer");
-        Self {
-            shortcuts: true,
-            ..lexer
-        }
+        Self::with([]).expect("the built-in matchers form a valid lexer")
     }
 }
 
@@ -287,51 +389,64 @@ impl fmt::Debug for Lexer {
 }
 
 /// Puts every matcher before the ones it overrides, and otherwise keeps the
-/// order they were given in.
+/// order they were given in: a matcher that overrides another moves up to
+/// just before it, and no matcher moves down.
 fn order(matchers: Vec<Box<dyn Matcher>>) -> Result<Vec<Box<dyn Matcher>>, Error> {
-    let mut waiting: Vec<Option<Box<dyn Matcher>>> = matchers.into_iter().map(Some).collect();
-    let mut ordered = Vec::with_capacity(waiting.len());
-    while ordered.len() < waiting.len() {
-        // The first waiting matcher that no other waiting matcher overrides.
-        let next = waiting.iter().position(|slot| {
-            slot.as_ref().is_some_and(|candidate| {
-                !waiting
-                    .iter()
-                    .flatten()
-                    .any(|m| m.overrides().contains(&candidate.kind()))
-            })
-        });
-        match next {
-            Some(i) => ordered.extend(waiting[i].take()),
-            None => return Err(Error::OverrideCycle(cycle(waiting.iter().flatten()))),
-        }
+    /// Where a matcher is on its way into the order.
+    #[derive(Clone, Copy, PartialEq)]
+    enum State {
+        Waiting,
+        /// Its overriders are being placed. Meeting it again is a circle.
+        Placing,
+        Placed,
     }
-    Ok(ordered)
-}
 
-/// One circle of overrides among `stuck`, a set of matchers in which every
-/// one is overridden by another of the set.
-fn cycle<'m>(stuck: impl Iterator<Item = &'m Box<dyn Matcher>>) -> Vec<&'static str> {
-    let stuck: Vec<_> = stuck.collect();
-    // Walking from any matcher to one that overrides it must come back to a
-    // matcher already on the path, and the path from there on is a circle.
-    let mut path = vec![stuck[0].kind()];
-    loop {
-        let last = path[path.len() - 1];
-        let overrider = stuck
-            .iter()
-            .find(|m| m.overrides().contains(&last))
-            .expect("every stuck matcher is overridden by another")
-            .kind();
-        if let Some(first) = path.iter().position(|kind| *kind == overrider) {
-            // The walk went from overridden to overrider; reverse it so that
-            // each matcher overrides the next.
-            let mut circle = path.split_off(first);
-            circle.reverse();
-            return circle;
+    /// Places matcher `index` after every matcher that overrides it.
+    /// `path` holds the matchers being placed, each overridden by the next.
+    fn place(
+        index: usize,
+        matchers: &[Box<dyn Matcher>],
+        states: &mut [State],
+        path: &mut Vec<usize>,
+        placed: &mut Vec<usize>,
+    ) -> Result<(), Error> {
+        match states[index] {
+            State::Placed => return Ok(()),
+            State::Placing => {
+                // The path from this matcher on is a circle. It runs from
+                // overridden to overrider; reversed, each overrides the next.
+                let first = path.iter().position(|&on_path| on_path == index);
+                let circle = &path[first.expect("a matcher being placed is on the path")..];
+                return Err(Error::OverrideCycle(
+                    circle.iter().rev().map(|&i| matchers[i].kind()).collect(),
+                ));
+            }
+            State::Waiting => {}
         }
-        path.push(overrider);
+        states[index] = State::Placing;
+        path.push(index);
+        let kind = matchers[index].kind();
+        for overrider in 0..matchers.len() {
+            if matchers[overrider].overrides().contains(&kind) {
+                place(overrider, matchers, states, path, placed)?;
+            }
+        }
+        path.pop();
+        states[index] = State::Placed;
+        placed.push(index);
+        Ok(())
     }
+
+    let mut states = vec![State::Waiting; matchers.len()];
+    let mut placed = Vec::with_capacity(matchers.len());
+    for index in 0..matchers.len() {
+        place(index, &matchers, &mut states, &mut Vec::new(), &mut placed)?;
+    }
+    let mut waiting: Vec<Option<Box<dyn Matcher>>> = matchers.into_iter().map(Some).collect();
+    Ok(placed
+        .into_iter()
+        .filter_map(|index| waiting[index].take())
+        .collect())
 }
 
 /// The tokens of one text. Created by [`Lexer::tokens`].
@@ -351,18 +466,14 @@ impl<'t> Iterator for Tokens<'_, 't> {
         if start >= self.text.len() {
             return None;
         }
-        let shortcut = if self.lexer.shortcuts {
+        let first = self.text.as_bytes()[start];
+        let shortcut = if self.lexer.shortcut_at[first as usize] {
             shortcuts::token(self.text, start)
         } else {
             None
         };
-        let (kind, end) = shortcut.unwrap_or_else(|| {
-            let first = self.text[start..]
-                .chars()
-                .next()
-                .expect("the text has not ended");
-            self.lexer.token_at(self.text, start, first)
-        });
+        let (kind, end) =
+            shortcut.unwrap_or_else(|| self.lexer.token_from_matchers(self.text, start));
         self.pos = end;
         Some(Token {
             kind,
