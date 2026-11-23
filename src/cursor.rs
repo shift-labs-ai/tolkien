@@ -55,6 +55,15 @@ impl<'t> Cursor<'t> {
         &self.text[self.pos..]
     }
 
+    /// The text from byte offset `start`, usually one saved earlier from
+    /// [`pos`](Cursor::pos), up to the cursor.
+    ///
+    /// # Panics
+    /// If `start` is after the cursor or not on a character boundary.
+    pub fn since(&self, start: usize) -> &'t str {
+        &self.text[start..self.pos]
+    }
+
     /// The character at the cursor, or `None` at the end.
     #[inline]
     pub fn peek(&self) -> Option<char> {
@@ -173,6 +182,7 @@ mod tests {
         assert_eq!(cur.advance(), None);
         assert_eq!(cur.back(), Some('𝄞'));
         assert_eq!(cur.rest(), "𝄞");
+        assert_eq!(cur.since(1), "é→");
     }
 
     #[test]

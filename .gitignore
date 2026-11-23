@@ -1,3 +1,4 @@
 target/
 tools/.ucd/
 __pycache__/
+corpus/

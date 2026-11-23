@@ -5,7 +5,8 @@ use std::sync::LazyLock;
 use super::currency_data::{NAMES, SYMBOLS};
 use super::BASE_AND_NUMBER;
 use crate::chars::{
-    is_comma, is_currency_symbol, is_digit, is_full_stop, is_letter, is_whitespace,
+    is_apostrophe, is_comma, is_currency_symbol, is_digit, is_full_stop, is_letter_or_digit,
+    is_whitespace,
 };
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
@@ -14,8 +15,16 @@ use crate::trie::Trie;
 /// Kind of [`Currency`] tokens.
 pub const CURRENCY: &str = "CURRENCY";
 
-static CURRENCIES: LazyLock<Trie> =
-    LazyLock::new(|| Trie::from_words_in_common_cases(NAMES.iter().chain(SYMBOLS)));
+/// The names in their common cases (`Dollars`, `dollars`, `DOLLARS`) and the
+/// codes and symbols only as they are written (`USD`, `kr`): in lower case a
+/// code is too often a word, as `ALL`, `TRY` and `PEN` are.
+static CURRENCIES: LazyLock<Trie> = LazyLock::new(|| {
+    let mut trie = Trie::from_words_in_common_cases(NAMES);
+    for symbol in SYMBOLS {
+        trie.insert(symbol);
+    }
+    trie
+});
 
 /// An amount of money, in one of two forms.
 ///
@@ -23,16 +32,18 @@ static CURRENCIES: LazyLock<Trie> =
 /// The symbols are the characters of Unicode category Sc.
 ///
 /// An amount first, then an optional white space character and a currency
-/// name, code or abbreviation that is not followed by a letter: `5 USD`,
-/// `5.4 Dollars`, `5,000 cents`.
+/// name, code or abbreviation: `5 USD`, `5.4 Dollars`, `5,000 cents`. No
+/// letter, digit or apostrophe may follow it, so `5 Centsless`, the start of
+/// `3L7gwx` and `94 won't` do not match.
 ///
 /// An amount is digits with full stops and commas between them, and may
 /// start with a full stop: `.50`.
 ///
-/// The list of names and abbreviations is long, and each is matched in
-/// [four spellings](Trie::from_words_in_common_cases), so short ones collide
-/// with units and common words: `5 km` (convertible marks), `5 ft` (forints)
-/// and `5 all` (Albanian leks) match.
+/// A name is matched in its
+/// [common cases](Trie::from_words_in_common_cases), a code or abbreviation
+/// only as it is written. The list is long, so some entries still collide
+/// with other words: `5 K` (kina) and `21 para` (a subunit of the dinar)
+/// match.
 pub struct Currency;
 
 fn is_amount_punctuation(c: char) -> bool {
@@ -68,7 +79,10 @@ fn amount_first(cur: &mut Cursor<'_>) -> bool {
         return false;
     }
     cur.advance_if(is_whitespace);
-    CURRENCIES.advance_longest(cur) && !cur.peek().is_some_and(is_letter)
+    CURRENCIES.advance_longest(cur)
+        && !cur
+            .peek()
+            .is_some_and(|c| is_letter_or_digit(c) || is_apostrophe(c))
 }
 
 impl Matcher for Currency {
@@ -150,6 +164,14 @@ mod tests {
             "..5 USD",
             "5. USD",
             "5 Abkhazia",
+            "5 usd",
+            "3L7gwxiygty",
+            "94 won't",
+            "5 km",
+            "5 ft",
+            "5 all",
+            "5 try",
+            "2005 p. 805",
             "",
         ] {
             assert_eq!(Currency.match_prefix(text), None, "{text:?}");
@@ -163,12 +185,12 @@ mod tests {
         }
     }
 
-    /// A known weak spot, pinned so that a change to it is a decision:
-    /// short abbreviations collide with units and common words.
+    /// A known weak spot, pinned so that a change to it is a decision: some
+    /// abbreviations and names are also other words.
     #[test]
-    fn short_abbreviations_collide_with_other_words() {
-        for text in ["5 km", "5 ft", "5 all", "5 try", "5 pen", "5 K"] {
-            assert_eq!(Currency.match_prefix(text), Some(text));
+    fn some_abbreviations_and_names_collide_with_other_words() {
+        for (text, expected) in [("5 K", "5 K"), ("21 para. 6", "21 para"), ("5 kr", "5 kr")] {
+            assert_eq!(Currency.match_prefix(text), Some(expected));
         }
     }
 }

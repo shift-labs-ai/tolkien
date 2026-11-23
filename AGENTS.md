@@ -12,6 +12,9 @@ cargo test                                         # unit, integration and doc t
 python3 tools/gen_unicode.py                       # regenerate the character tables
 cargo run -- "some text"                           # print tokens
 cargo run --release --example throughput -- FILE   # measure speed
+python3 tools/corpora.py                           # download the test corpora into corpus/
+cargo run --release --example fuzz -- corpus/docs/*.txt   # property checks on real and mutated text
+python3 tools/evaluate.py                          # score tokens against labelled spans
 ```
 
 `tools/verify.sh` runs rustfmt, clippy with `-D warnings`, the tests, the
@@ -36,6 +39,10 @@ there.
 - `tests/lexer.rs`: tests of the lexer as a whole
 - `tests/cli.rs`: tests of the command
 - `tools/verify.sh`: every check, for CI and for a person
+- `examples/fuzz.rs`: the fuzzer; its `shape` function states every kind's
+  rules a second time, independently of the matchers
+- `tools/corpora.py`, `tools/evaluate.py`: fetch the benchmark corpora and
+  score the tokens against their labels; `docs/benchmarks.md` has the results
 
 ## Key patterns
 
@@ -65,6 +72,13 @@ there.
   `docs/charsets.md`. Never edit `src/unicode_tables.rs`.
 - **Behaviour changes against fastlex** are listed in the README. Add to
   that table when a matcher is changed on purpose.
+- **A matcher reads forward only.** It never looks at what stands before
+  its start, so that lexing can begin at any token boundary. The fuzzer's
+  `no-left-context` check holds it to that.
+- **A change to a matcher is a change to three places:** the matcher, its
+  rules in `shape` in `examples/fuzz.rs`, and the README. Then run the
+  fuzzer and `tools/evaluate.py` on the corpora and compare the scores with
+  `docs/benchmarks.md`: a fix for one label must not cost another.
 
 ## Adding a matcher
 
@@ -77,4 +91,6 @@ there.
 4. In `tests/lexer.rs`, add a sample to
    `default_lexer_names_the_parts_of_a_sentence`, to the random-text alphabet
    and to the long runs.
-5. Add a row to the matcher table in the README.
+5. Add the kind's rules to `shape` in `examples/fuzz.rs` and pieces that
+   start or break it to the fuzzer's `DICTIONARY`.
+6. Add a row to the matcher table in the README.

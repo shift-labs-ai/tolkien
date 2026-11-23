@@ -56,8 +56,8 @@ Offsets are byte offsets into the UTF-8 text.
 | Kind | Matches | Examples |
 |---|---|---|
 | `DATE_ISO_8601` | A full ISO 8601 date and the complete part of a time after it | `2022-01-06`, `2022-01-06T08:42:27.5+02:00` |
-| `DATE` | Day, month and year, in numbers or with an English month name | `02/17/2009`, `17 Feb, 2009`, `Feb172009` |
-| `TIME` | Hours and minutes, optional seconds, optional AM/PM | `7:20`, `04:01:30`, `8:05 PM`, `4:01 a.m.` |
+| `DATE` | Day, month and year, in numbers or with an English month name | `02/17/2009`, `17th Feb, 2009`, `Feb172009` |
+| `TIME` | Hours and minutes, optional seconds, optional AM/PM; or an hour and AM/PM | `7:20`, `04:01:30`, `8:05 PM`, `4 PM` |
 | `LIKE_EMAIL` | `local@domain.tld` in ASCII | `dana@mail.example.co.uk` |
 | `LIKE_URL` | `http://`, `https://` or `www.` and what follows | `https://t.co/2Ecdop6zl1` |
 | `CURRENCY` | Currency symbols with an amount, or an amount with a currency name or code | `$5`, `€1,000.50`, `5 USD`, `5.4 Dollars` |
@@ -76,19 +76,46 @@ With the default lexer `DIGIT` and `LETTER` never appear: `LIKE_NUMBER`,
 `WORD` and `ALPHA_NUMERIC_SEQUENCE` are tried first and take every run they
 would.
 
-The matchers check shape, not meaning. `99/99/9999` is a `DATE`.
+The matchers check shape and little more: a numeric date needs a month
+from 1 to 12, but `31/02/2009` is a `DATE`.
 
 Known weak spots:
 
-- A version number with three parts is a `DATE`: `1.2.3`.
+- A version number that looks like a date is a `DATE`: `4.1.10`.
 - A package reference is a `LIKE_EMAIL`: `liteparse@2.12.0`.
-- A URL takes a closing bracket that follows it: `(https://example.com)`.
-- Short currency abbreviations collide with units and common words: `5 km`,
-  `5 ft`, `5 all`, `5 try`.
-- A number keeps the punctuation after it: `1.` at the end of a sentence.
+- Some currency abbreviations and names are also other words: `5 K`,
+  `21 para`.
 - An ISO date takes a two-digit number after a space as its hour:
   `2022-01-06 12 apples`.
-- A word keeps a dash or an apostrophe at its end: `word-`, `dogs'`.
+- A word keeps a dash or an apostrophe at its end, and a possessive is one
+  word: `word-`, `dogs'`, `Abby's`.
+- The end of a MAC address is a `TIME`: `09:54:39` in `1d:d8:97:09:54:39`.
+  A matcher reads forward only, so it cannot see what stands before it.
+
+No matcher exists yet for phone numbers, IP and MAC addresses, dates
+without a year (`30 January`, `March 2006`) or amounts with a magnitude
+(`$5k`). [docs/benchmarks.md](docs/benchmarks.md) measures what that costs.
+
+## Testing against real text
+
+Two tools check the lexer against text nobody here wrote. Both read corpora
+that `tools/corpora.py` downloads into `corpus/`, which is not committed.
+
+```bash
+python3 tools/corpora.py                                          # fetch and prepare
+cargo run --release --example fuzz -- corpus/docs/*.txt           # properties
+cargo build --release && python3 tools/evaluate.py                # labelled spans
+```
+
+- **`examples/fuzz.rs`** lexes every document, then mutates documents at
+  random, and checks properties that must hold for any text: the tokens
+  cover it, every token has the form its kind documents, a token on its own
+  is the same token, a token does not depend on what stands before it, and
+  the time is in proportion to the length. A failing text is cut down and
+  printed.
+- **`tools/evaluate.py`** compares the tokens with the spans people labelled
+  in two datasets: is an email address, a date or a card number one token,
+  and of the expected kind? `docs/benchmarks.md` holds the results.
 
 ## Your own matcher
 
@@ -140,7 +167,7 @@ pattern over character names (`FULL STOP`, `COMMA`, `QUESTION MARK`).
 
 ## Speed
 
-About 59 MB/s and 21 million tokens per second with every built-in matcher,
+About 57 MB/s and 21 million tokens per second with every built-in matcher,
 on an Apple M5 laptop, over 1.2 MB of English technical prose. The slowest
 input measured is a long run of one punctuation character, at about 10 MB/s.
 
@@ -160,17 +187,19 @@ The design is the same. These behaviours changed:
 | Offsets | UTF-16 code units | UTF-8 bytes |
 | Characters above U+FFFF | Seen as two surrogates | Seen as one character |
 | Word lists (months, currencies) | Any prefix of a word counted as the word | The whole word must match |
-| `LIKE_URL` | Matched any text, because of the prefix bug | Needs `http://`, `https://` or `www.`; allows `%`; leaves out sentence punctuation at the end |
+| `LIKE_URL` | Matched any text, because of the prefix bug | Needs `http://`, `https://` or `www.`; allows `%`; leaves out sentence punctuation and an unopened closing bracket at the end |
 | `LINE_TERMINATION` | Included the letters `v` and `f` and the backslash | Line-break classes BK, CR, LF, NL |
 | Character sets | Written by hand | Generated from the Unicode data; see the notes below |
-| `LIKE_EMAIL` | Kept a full stop after the address; any length before the `@` | Leaves the full stop out; at most 64 characters before the `@` |
-| `TIME` | Accepted hours 50 to 99 and any digits as seconds; read `10:30 Am` in `10:30 Amsterdam` | Hours 0 to 24, seconds 00 to 59; the marker must end where its word ends |
-| `TIME`, `DATE_ISO_8601` digits | Any Unicode digit | ASCII digits |
-| `DATE` with a month name | Had to end at white space, a full stop, a comma or a colon, so `(Feb 17, 2009)` was not a date | May end anywhere but before a letter |
+| `LIKE_EMAIL` | Kept a full stop after the address; any length before the `@`, which could start with `.` or `-` | Leaves the full stop out; at most 64 characters before the `@`, starting with a letter or a digit |
+| `TIME` | Accepted hours 50 to 99 and any digits as seconds; read `10:30 Am` in `10:30 Amsterdam`; needed minutes | Hours 0 to 24, seconds 00 to 59; the marker must end where its word ends; `4 PM` is a time; not a time before a colon and more (`07:01:75:c5`) |
+| `TIME`, `DATE`, `DATE_ISO_8601` digits | Any Unicode digit | ASCII digits |
+| `DATE` in numbers | Any three numbers of the right lengths with any two separators: `1.2.3`, `1/04 9`, `3,4,15`, `99/99/9999` | The same separator twice (never a comma, a space only after a leading year); month 1 to 12, day 1 to 31; a closing year of two or four digits; not the start of a longer run |
+| `DATE` with a month name | Had to end at white space, a full stop, a comma or a colon, so `(Feb 17, 2009)` was not a date; no ordinals | May end anywhere but before a letter; `17th Feb 2009` is a date |
 | `WORD` | Could start with a dash or an apostrophe: `--help`, `-word` | Starts with a letter |
 | `ALPHA_NUMERIC_SEQUENCE` | Could start with a dash or an underscore | Starts with a letter or a digit |
-| `LIKE_NUMBER` | Any amount of punctuation before the first digit | At most two punctuation characters before it |
+| `LIKE_NUMBER` | Any amount of punctuation before the first digit; kept the punctuation after the last one (`1.`, `100%,`) | At most two punctuation characters before it; ends with a number character or a percent sign |
 | `CURRENCY` amounts | Could start with any run of full stops and commas; one trailing full stop or comma dropped after a symbol | Start with a digit or one full stop; all trailing full stops and commas dropped |
+| `CURRENCY` names | Codes and abbreviations matched in any case (`5 km`, `5 all`); a name could be followed by a digit or an apostrophe (`94 won't`) | Names in their common cases, codes and abbreviations only as written; no letter, digit or apostrophe after the name |
 | Currency list | Included the region names Abkhazia and Artsakh | Without them |
 | Time to lex | Quadratic on a long run of dashes, dots or underscores | Linear |
 | `PHONE_NUMBER` | A stub that never matched | Not ported |

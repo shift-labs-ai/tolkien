@@ -15,7 +15,10 @@ const PREFIXES: &[&str] = &["http://", "https://", "www."];
 /// URL characters are letters, digits and the punctuation RFC 3986 allows:
 /// the reserved and unreserved characters and `%`. The run is not checked any
 /// further. Sentence punctuation at its very end (`. , ; : ! ? '`) is left
-/// out, so an address that ends a sentence does not take the full stop.
+/// out, so an address that ends a sentence does not take the full stop. So
+/// is a closing bracket at the end that no bracket inside the address opens:
+/// `(see https://example.com)` gives `https://example.com`, and
+/// `https://example.com/a_(b)` keeps its bracket.
 pub struct LikeUrl;
 
 fn is_sentence_punctuation(c: char) -> bool {
@@ -50,7 +53,26 @@ impl Matcher for LikeUrl {
         }
         let after_prefix = cur.pos();
         cur.advance_while2(is_letter_or_digit, is_url_symbol);
-        cur.back_while(is_sentence_punctuation);
+        let run = cur.since(after_prefix);
+        let mut unopened = [(')', '('), (']', '[')].map(|(close, open)| {
+            (
+                close,
+                run.matches(close)
+                    .count()
+                    .saturating_sub(run.matches(open).count()),
+            )
+        });
+        loop {
+            cur.back_while(is_sentence_punctuation);
+            let Some(slot) = unopened
+                .iter_mut()
+                .find(|(close, n)| *n > 0 && cur.prev() == Some(*close))
+            else {
+                break;
+            };
+            slot.1 -= 1;
+            cur.back();
+        }
         cur.pos() > after_prefix
     }
 }
@@ -77,6 +99,12 @@ mod tests {
             ("https://example.com/a, and", "https://example.com/a"),
             ("https://example.com/a/?!", "https://example.com/a/"),
             ("https://example.com/a_(b)", "https://example.com/a_(b)"),
+            ("https://example.com) by", "https://example.com"),
+            ("https://example.com).", "https://example.com"),
+            ("https://example.com/a_(b)))", "https://example.com/a_(b)"),
+            ("https://example.com/x]", "https://example.com/x"),
+            ("https://example.com/[x]", "https://example.com/[x]"),
+            ("https://example.com/a)b", "https://example.com/a)b"),
         ] {
             assert_eq!(LikeUrl.match_prefix(text), Some(expected), "{text:?}");
         }
@@ -91,6 +119,7 @@ mod tests {
             "ftp://x",
             "https://",
             "https://.",
+            "https://)",
             "http://:",
             "www.",
             "www..",

@@ -13,7 +13,7 @@ pub const LIKE_EMAIL: &str = "LIKE_EMAIL";
 /// 5322. The local part is ASCII letters, digits and `_ - . +`; the domain is
 /// ASCII letters, digits and `-`; the part after its first dot is ASCII
 /// letters, digits, `-` and `.`. Each part needs at least one letter or
-/// digit, and the local part has at most 64 characters. A dot or dash at the
+/// digit, and the local part starts with one and has at most 64 characters. A dot or dash at the
 /// very end is left out, so an address that ends a sentence does not take the
 /// full stop with it.
 pub struct LikeEmail;
@@ -44,15 +44,15 @@ impl Matcher for LikeEmail {
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
-        let mut local = 0;
-        for _ in 0..MAX_LOCAL_PART {
-            if cur.advance_if(is_ascii_letter_or_digit) {
-                local += 1;
-            } else if !cur.advance_if(is_local_symbol) {
+        if !cur.advance_if(is_ascii_letter_or_digit) {
+            return false;
+        }
+        for _ in 1..MAX_LOCAL_PART {
+            if !cur.advance_if(|c| is_ascii_letter_or_digit(c) || is_local_symbol(c)) {
                 break;
             }
         }
-        if local == 0 || !cur.advance_if(|c| c == '@') {
+        if !cur.advance_if(|c| c == '@') {
             return false;
         }
         let (_, domain) = cur.advance_while2(|c| c == '-', is_ascii_letter_or_digit);
@@ -131,6 +131,8 @@ mod tests {
             "prettyand\"simple@example.com",
             "prettyandsimple.example.co_m",
             "@example.com",
+            ".dana@example.com",
+            "_@example.com",
             "",
         ] {
             assert_eq!(LikeEmail.match_prefix(text), None, "{text:?}");

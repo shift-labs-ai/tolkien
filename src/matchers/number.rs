@@ -16,9 +16,9 @@ pub const LIKE_NUMBER: &str = "LIKE_NUMBER";
 ///
 /// The punctuation is full stops, commas, percent and number signs, math
 /// symbols, dashes and connectors. At most two punctuation characters stand
-/// before the first number character (`-.5`, `--1`). After it, punctuation is
-/// taken wherever it stands, so a number at the end of a sentence keeps the
-/// full stop: `1.`
+/// before the first number character (`-.5`, `--1`). A number ends with a
+/// number character or a percent sign, so one at the end of a sentence does
+/// not take the full stop: `1.` gives `1`.
 pub struct LikeNumber;
 
 /// How many punctuation characters may stand before the first number
@@ -54,6 +54,7 @@ impl Matcher for LikeNumber {
             return false;
         }
         cur.advance_while2(is_number, is_number_punctuation);
+        cur.back_while(|c| is_number_punctuation(c) && !is_percent_sign(c));
         true
     }
 }
@@ -91,13 +92,16 @@ mod tests {
             ("0.1 ", "0.1"),
             ("100%", "100%"),
             ("100% ", "100%"),
-            ("100%.", "100%."),
-            ("100%,", "100%,"),
+            ("100%.", "100%"),
+            ("100%,", "100%"),
             ("1,000 ", "1,000"),
             ("1,000!!", "1,000"),
-            ("1.", "1."),
-            ("1.-", "1.-"),
-            ("100%,!", "100%,"),
+            ("1.", "1"),
+            ("1.-", "1"),
+            ("100%,!", "100%"),
+            ("215.114.180.213. As", "215.114.180.213"),
+            ("18+", "18"),
+            ("5%-10%", "5%-10%"),
             ("½ cup", "½"),
             ("٣٥ ", "٣٥"),
         ] {
