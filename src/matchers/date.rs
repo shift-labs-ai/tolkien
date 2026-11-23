@@ -92,39 +92,61 @@ fn last_number(cur: &mut Cursor<'_>) -> bool {
     cur.advance_while(is_ascii_digit) > 0 && !cur.peek().is_some_and(is_letter)
 }
 
-/// For every byte, whether a month name has it as its first letter (bit
-/// 0), its second (bit 1) or its third (bit 2), in either case.
-const MONTH_LETTERS: [u8; 256] = {
-    let mut letters = [0; 256];
-    let mut name = 0;
-    while name < MONTH_NAMES.len() {
-        let bytes = MONTH_NAMES[name].as_bytes();
-        let mut at = 0;
-        while at < 3 {
-            letters[bytes[at].to_ascii_lowercase() as usize] |= 1 << at;
-            letters[bytes[at].to_ascii_uppercase() as usize] |= 1 << at;
-            at += 1;
+/// Three bytes as one number, with upper case letters made lower case.
+const fn folded(bytes: [u8; 3]) -> u32 {
+    u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0]) | 0x0020_2020
+}
+
+/// Where the three letters `folded` are looked up in [`MONTH_STARTS`].
+const fn slot(folded: u32) -> usize {
+    (folded.wrapping_mul(MONTH_STARTS.multiplier) >> 28) as usize
+}
+
+/// The first three letters of every month name, each in a slot of its own.
+struct MonthStarts {
+    /// The number that sends the twelve to twelve different slots.
+    multiplier: u32,
+    /// The letters in each slot, [`folded`], or zero in an empty one.
+    slots: [u32; 16],
+}
+
+const MONTH_STARTS: MonthStarts = {
+    let mut multiplier = 1;
+    loop {
+        let mut slots = [0; 16];
+        let mut name = 0;
+        while name < MONTH_NAMES.len() {
+            let [a, b, c, ..] = *MONTH_NAMES[name].as_bytes() else {
+                panic!("a month name has three letters or more");
+            };
+            let start = folded([a, b, c]);
+            let slot = (start.wrapping_mul(multiplier) >> 28) as usize;
+            if slots[slot] != 0 && slots[slot] != start {
+                break;
+            }
+            slots[slot] = start;
+            name += 1;
         }
-        name += 1;
+        if name == MONTH_NAMES.len() {
+            break MonthStarts { multiplier, slots };
+        }
+        multiplier += 1;
     }
-    letters
 };
 
-/// False when `text` cannot start with a month name, going by its first
-/// three bytes.
+/// True when `text` starts with the first three letters of a month name, in
+/// any mix of upper and lower case.
 ///
 /// Every word of a text is asked about, and what letters a word starts with
 /// is not something a processor can guess. So the three bytes are tested
-/// together, with no branch between them: a byte after the end of a short
-/// word is not a letter and fails like any other.
+/// together, with no branch between them, and exactly: words that only
+/// resemble a month, such as `many` or `section`, are too common to be
+/// looked at any further.
 #[inline]
 fn may_start_with_month(text: &[u8]) -> bool {
-    text.first_chunk::<3>().is_some_and(|&[a, b, c]| {
-        MONTH_LETTERS[a as usize]
-            & MONTH_LETTERS[b as usize] >> 1
-            & MONTH_LETTERS[c as usize] >> 2
-            & 1
-            != 0
+    text.first_chunk::<3>().is_some_and(|&start| {
+        let start = folded(start);
+        MONTH_STARTS.slots[slot(start)] == start
     })
 }
 
@@ -228,7 +250,11 @@ impl Matcher for Date {
     }
 
     fn can_start(&self, first: char) -> bool {
-        first.is_ascii_digit() || (first.is_ascii() && MONTH_LETTERS[first as usize] & 1 != 0)
+        // The names are written with a capital.
+        first.is_ascii_digit()
+            || MONTH_NAMES
+                .iter()
+                .any(|name| name.starts_with(first.to_ascii_uppercase()))
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
@@ -244,6 +270,34 @@ impl Matcher for Date {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_three_letters_tell_a_month_from_a_word_like_one() {
+        for name in MONTH_NAMES {
+            for name in [name.to_string(), name.to_lowercase(), name.to_uppercase()] {
+                assert!(may_start_with_month(name.as_bytes()), "{name}");
+            }
+        }
+        // Each has, place by place, a letter some month name has there.
+        for word in [
+            "many",
+            "section",
+            "not",
+            "apply",
+            "July"[..2].into(),
+            "j\u{1}n",
+            "JAN"[..2].into(),
+        ] {
+            assert!(!may_start_with_month(word.as_bytes()), "{word}");
+        }
+        // The same letters with another bit set are not letters.
+        for start in [*b"\x0a\x01\x0e", *b"*!.", *b"ja\xee"] {
+            assert!(!may_start_with_month(&start), "{start:?}");
+        }
+        assert!(may_start_with_month(b"decision"));
+        assert!(!starts_with_month(b"decision", 8));
+        assert!(starts_with_month(b"dEcEmBeR 1", 8));
+    }
 
     #[test]
     fn matches_numeric_dates() {

@@ -183,12 +183,12 @@ With every built-in matcher, on an Apple M5 laptop with ten cores:
 
 | Text | Size | One thread | Every core, collected |
 |---|---:|---:|---:|
-| Court cases (TAB) | 0.7 MB | 495 MB/s | 500 to 800 MB/s |
-| Sentences with personal data (ai4privacy, English) | 7.6 MB | 365 MB/s | 1,000 MB/s |
-| Documents converted to markdown | 0.6 MB | 335 MB/s | 420 MB/s |
-| Wikipedia in 24 languages and scripts | 2.9 MB | 340 MB/s | 1,000 MB/s |
+| Court cases (TAB) | 0.7 MB | 575 MB/s | 500 to 830 MB/s |
+| Sentences with personal data (ai4privacy, English) | 7.6 MB | 420 MB/s | 1,050 MB/s |
+| Documents converted to markdown | 0.6 MB | 355 MB/s | 450 MB/s |
+| Wikipedia in 24 languages and scripts | 2.9 MB | 345 MB/s | 1,050 MB/s |
 
-That is 80 to 170 million tokens a second on one thread. The figures are the
+That is 80 to 195 million tokens a second on one thread. The figures are the
 best of 40 runs and move by a few percent between runs; on every core, the
 two small files move much more, because starting the threads is a large
 part of a millisecond. The slowest input measured is a long run of single
