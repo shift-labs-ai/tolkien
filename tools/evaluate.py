@@ -52,10 +52,29 @@ EXPECTED = {
     "DATETIME": {"DATE", "DATE_ISO_8601", "TIME", "LIKE_NUMBER"},
 }
 
+# The same for the labels a matcher of the catalog covers: with --catalog.
+EXPECTED_WITH_CATALOG = {
+    "IPV4": {"IPV4"},
+    "IPV6": {"IPV6"},
+    "IP": {"IPV4", "IPV6"},
+    "MAC": {"MAC_ADDRESS"},
+    "CREDITCARDNUMBER": {"CARD_NUMBER"},
+    "IBAN": {"IBAN"},
+    "BITCOINADDRESS": {"BITCOIN_ADDRESS"},
+    "ETHEREUMADDRESS": {"ETHEREUM_ADDRESS"},
+    "PHONENUMBER": {"PHONE_NUMBER"},
+    "PHONEIMEI": {"IMEI"},
+    "SSN": {"US_SSN"},
+    "NEARBYGPSCOORDINATE": {"COORDINATES"},
+}
+
+# Options for the tolkien command.
+OPTIONS: list[str] = []
+
 
 def lex(text: str) -> list[tuple[str, int, int]]:
     """The (kind, start, end) of every token of `text`, in bytes."""
-    result = subprocess.run([str(BINARY)], input=text.encode("utf-8"), capture_output=True, check=True)
+    result = subprocess.run([str(BINARY), *OPTIONS], input=text.encode("utf-8"), capture_output=True, check=True)
     tokens = []
     for line in result.stdout.decode("utf-8").splitlines():
         kind, start, end, _ = line.split("\t", 3)
@@ -177,7 +196,11 @@ def main() -> None:
     parser.add_argument("-l", "--label", help="print misses of this label")
     parser.add_argument("-n", "--examples", type=int, default=20, help="how many to print")
     parser.add_argument("--stray", metavar="KIND", help="print tokens of this kind outside its spans")
+    parser.add_argument("--catalog", action="store_true", help="lex with every matcher of the catalog")
     args = parser.parse_args()
+    if args.catalog:
+        OPTIONS.append("--catalog")
+        EXPECTED.update(EXPECTED_WITH_CATALOG)
     if not BINARY.exists():
         sys.exit("build first: cargo build --release, in rust/")
     paths = sorted(LABELLED.glob("*.jsonl"))

@@ -306,6 +306,11 @@ impl Step {
 
     /// Steps back over the characters of `class` just before the cursor,
     /// so that the token does not end with them. It always succeeds.
+    ///
+    /// It steps back as far as the class goes, to the start of the token
+    /// if nothing stops it. Before a run that it follows, put a step that
+    /// takes a character outside the class: without one, a long run of the
+    /// class is read, given back, and read again from the next token.
     pub fn trim_end(class: Class) -> Self {
         Self(Kind::TrimEnd(class))
     }
@@ -582,13 +587,9 @@ pub struct Pattern {
 impl Pattern {
     /// A matcher of the kind `kind` that matches where `steps` succeed in
     /// turn, and takes what they passed.
-    ///
-    /// The name of the kind is kept for as long as the program runs, as the
-    /// names of the built-in kinds are. Build a pattern once, not once for
-    /// every text.
-    pub fn new(kind: &str, steps: impl IntoIterator<Item = Step>) -> Self {
+    pub fn new(kind: &'static str, steps: impl IntoIterator<Item = Step>) -> Self {
         let mut pattern = Self {
-            kind: Box::leak(kind.to_string().into_boxed_str()),
+            kind,
             steps: steps.into_iter().collect(),
             count: None,
             ascii_starts: 0,

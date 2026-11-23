@@ -47,6 +47,8 @@ bun test                    # the Node package, and the wasm package against it
   the default order
 - `rust/src/pattern.rs`: `Pattern`, a matcher built from a list of `Step`s over
   `Class`es of characters: matchers as data, for users and for bindings
+- `rust/src/catalog.rs`: the catalog, matchers that are offered and not in
+  the default lexer; each is an `Entry` with its examples
 - `rust/src/trie.rs`: `Trie`, longest-word lookup for month and currency names
 - `rust/src/chars.rs`: character class functions over the generated tables
 - `rust/src/unicode_tables.rs`: generated, never edited
@@ -180,6 +182,30 @@ bun test                    # the Node package, and the wasm package against it
   rules in `shape` in `rust/examples/fuzz.rs`, and the README. Then run the
   fuzzer and `tools/evaluate.py` on the corpora and compare the scores with
   `docs/benchmarks.md`: a fix for one label must not cost another.
+
+## Adding a matcher to the catalog
+
+A built-in matcher is for what any text holds, and changes what every
+user gets. Anything else goes in the catalog.
+
+1. Add its kind constant and an `Entry` to `ENTRIES` in
+   `rust/src/catalog.rs`, as a `Pattern` where the steps can say it and as
+   a `Matcher` written by hand where they cannot. Place it before any
+   entry that could take the same text.
+2. Give the entry texts it matches and texts it must refuse. The refused
+   ones are the point: the nearest things that are not one.
+3. Bound what it reads: a `repeat` with its number of rounds, a `trim_end`
+   that cannot give back everything a run took. Add its worst run to
+   `long_runs_are_lexed_in_linear_time_with_the_whole_catalog`.
+4. If a built-in matcher takes a longer token that starts the same way, as
+   a date does for an ordinal, refuse that case and add it to
+   `the_catalog_leaves_dates_times_and_amounts_alone`.
+5. Add its row to the catalog table of the README; `the_readme_lists_the_catalog`
+   prints the table it expects.
+6. Look at what it finds in real text before trusting it:
+   `python3 tools/evaluate.py --catalog`, and the tokens of its kind in
+   `corpus/docs/*.txt`. Every matcher of the first version was tightened
+   after that look.
 
 ## Adding a matcher
 

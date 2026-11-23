@@ -1,11 +1,13 @@
 //! Measures how fast the default lexer reads a file: on one thread, counting
 //! the tokens as they come, and on every core, collecting them.
 //!
-//!     cargo run --release --example throughput -- FILE [ROUNDS]
+//!     cargo run --release --example throughput -- FILE [ROUNDS] [catalog]
+//!
+//! With `catalog`, every matcher of the catalog is added to the lexer.
 
 use std::time::Instant;
 
-use tolkien::Lexer;
+use tolkien::{catalog, Lexer};
 
 /// The shortest of `rounds` runs of `run`, in seconds, and its result.
 fn best(rounds: u32, run: impl Fn() -> usize) -> (f64, usize) {
@@ -21,12 +23,15 @@ fn best(rounds: u32, run: impl Fn() -> usize) -> (f64, usize) {
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
-        eprintln!("usage: throughput FILE [ROUNDS]");
+        eprintln!("usage: throughput FILE [ROUNDS] [catalog]");
         std::process::exit(2);
     };
     let rounds: u32 = args.next().and_then(|n| n.parse().ok()).unwrap_or(5).max(1);
     let text = std::fs::read_to_string(&path).expect("a readable UTF-8 file");
-    let lexer = Lexer::default();
+    let lexer = match args.next().as_deref() {
+        Some("catalog") => Lexer::with(catalog::all()).expect("the catalog forms a valid lexer"),
+        _ => Lexer::default(),
+    };
     let megabytes = text.len() as f64 / 1e6;
 
     let (seconds, tokens) = best(rounds, || lexer.tokens(&text).count());

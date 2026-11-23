@@ -24,7 +24,7 @@ pub use base::{
 };
 pub(crate) use currency::name_after_amount;
 pub use currency::{Currency, CURRENCY};
-pub(crate) use date::{month_may_follow, starts_with_month};
+pub(crate) use date::{month_may_follow, starts_with_month, MONTH_NAMES};
 pub use date::{Date, DATE};
 pub(crate) use email::{is_local_byte as is_email_local_byte, local_part};
 pub use email::{LikeEmail, LIKE_EMAIL};

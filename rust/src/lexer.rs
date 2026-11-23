@@ -204,6 +204,14 @@ impl Lexer {
         Ok(lexer)
     }
 
+    /// The matchers that can start with the ASCII character `first`, as
+    /// indexes into `matchers` in the order they are tried.
+    #[inline]
+    fn candidates_at(&self, first: char) -> &[u16] {
+        let list = self.starts[first as usize] as usize..self.starts[first as usize + 1] as usize;
+        &self.candidates[list]
+    }
+
     /// The kind and the end of the token that starts at byte offset `start`
     /// of `text`, whose first character is `first`: the first of the
     /// matchers from index `from` on that finds one.
@@ -220,9 +228,7 @@ impl Lexer {
             Some((matcher.kind(), end))
         };
         let found = if first.is_ascii() {
-            let list =
-                self.starts[first as usize] as usize..self.starts[first as usize + 1] as usize;
-            self.candidates[list]
+            self.candidates_at(first)
                 .iter()
                 .filter(|&&index| index as usize >= from)
                 .find_map(|&index| attempt(self.matchers[index as usize].as_ref()))
@@ -253,10 +259,24 @@ impl Lexer {
             Some(0) | None => return self.token_at(text, start, first, 0),
             Some(added) => added,
         };
-        self.matchers[..added]
-            .iter()
-            .filter(|matcher| matcher.can_start(first))
-            .find_map(|matcher| Some((matcher.kind(), match_at(matcher.as_ref(), text, start)?)))
+        let attempt = |matcher: &dyn Matcher| {
+            let end = match_at(matcher, text, start)?;
+            Some((matcher.kind(), end))
+        };
+        let found = if first.is_ascii() {
+            // The matchers that can start here are listed in the order
+            // they are tried, so the added ones stand first in the list.
+            self.candidates_at(first)
+                .iter()
+                .take_while(|&&index| (index as usize) < added)
+                .find_map(|&index| attempt(self.matchers[index as usize].as_ref()))
+        } else {
+            self.matchers[..added]
+                .iter()
+                .filter(|matcher| matcher.can_start(first))
+                .find_map(|matcher| attempt(matcher.as_ref()))
+        };
+        found
             .or_else(|| shortcuts::token(text, start))
             .unwrap_or_else(|| self.token_at(text, start, first, added))
     }

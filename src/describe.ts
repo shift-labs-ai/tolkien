@@ -32,12 +32,20 @@ export type Step =
   | { step: "either"; choices: Step[][] }
   | { step: "trimEnd"; class: ClassPart[] };
 
-/** A matcher: what `matcher` returns and a `Lexer` takes. */
-export interface Matcher {
+/** A matcher described by its steps: what `matcher` returns. */
+export interface PatternMatcher {
   kind: string;
   steps: Step[];
   count?: { of: ClassPart[]; min: number; max: number };
 }
+
+/** A matcher of the catalog, named by its kind. */
+export interface CatalogMatcher {
+  catalog: string;
+}
+
+/** A matcher: what a `Lexer` takes. */
+export type Matcher = PatternMatcher | CatalogMatcher;
 
 function parts(cls: Class): ClassPart[] {
   return Array.isArray(cls) ? cls.flatMap(parts) : [cls as ClassPart];
@@ -190,7 +198,7 @@ export function matcher(
   kind: string,
   steps: readonly Step[],
   options: { count?: { of: Class; min: number; max: number } } = {},
-): Matcher {
+): PatternMatcher {
   const { count } = options;
   return {
     kind,

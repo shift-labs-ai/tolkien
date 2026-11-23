@@ -102,6 +102,52 @@ Before, `DATE` took version numbers (`2.9.165`, `10_7_2`) and `CURRENCY`
 took the start of any string that began with a digit and a letter the
 currency list knows in some case (`3L7gwx…`, `0da8`).
 
+## The catalog
+
+The matchers of the catalog, added with `--catalog`, against the labels
+they cover in `ai4privacy-en`. Share of spans that are one token of the
+expected kind; "default" is the share that is one token of any kind without
+the catalog, where such a span is at best a number or an alphanumeric
+sequence: the catalog gives it its kind, and makes one token of the
+addresses and numbers that were several.
+
+| Label | Spans | One token, default | Expected kind, with the catalog | What is left |
+|---|---:|---:|---:|---|
+| `IPV4` | 2,720 | 99.6% | 99.7% | |
+| `IPV6` | 2,401 | 0% | 99.6% | |
+| `MAC` | 1,114 | 0% | 99.8% | |
+| `CREDITCARDNUMBER` | 2,574 | 99.4% | 99.3% | glued to other text in the source |
+| `IBAN` | 1,973 | 99.9% | 99.9% | |
+| `PHONEIMEI` | 1,875 | 99.6% | 99.7% | |
+| `NEARBYGPSCOORDINATE` | 1,651 | 0% | 99.9% | |
+| `ETHEREUMADDRESS` | 1,624 | 99.7% | 99.7% | |
+| `PHONENUMBER` | 2,425 | 37.9% | 91.3% | a space between groups with no leading zero or `+` |
+| `BITCOINADDRESS` | 2,403 | 99.5% | 66.0% | the dataset's addresses are up to 36 characters; a real one has at most 35 |
+| `SSN` | 2,045 | 75.7% | 48.6% | half are not of the United States form: `756.4511.8112`, eleven digits together |
+
+The labels a built-in matcher covers are unchanged with the catalog:
+`DATE` 67.8%, `TIME` 66.0%, `EMAIL` and `URL` 99.8%.
+
+Labels say what a matcher finds, not what it finds by mistake. For that,
+the tokens of every kind of the catalog were read in the four corpora
+without labels (court cases, Wikipedia, converted documents, this
+repository). The first version was wrong in eight ways, each now a refused
+example of its entry:
+
+| What was found | Taken for | Now |
+|---|---|---|
+| ISBNs, `978-3-931911-18-8` and `3-922296-21-1` | a card number, a telephone number | `ISBN` |
+| `192.168.1.20` | a telephone number | needs a group of four digits |
+| Case numbers, `682/02` | a fraction | no leading zero |
+| Issue numbers, `#516` | a colour | three or four digits need a letter |
+| `2008 s`, `22 h` | a duration | a unit of one letter stands against its number |
+| `:*` and `:\|` in markdown, `=(` in code, `:3` in a ratio | an emoticon | left out |
+| `./C.` in `W./C. 6608` | a file path | two characters of a name |
+| A column of numbers, `1 22 333 4444 55555` | a card number | the first group has four digits |
+
+What a shape cannot tell apart is still there: a 19-digit number is a
+`CARD_NUMBER`, `$HOME` a `CASHTAG`, `2E18` a `SCIENTIFIC_NUMBER`.
+
 ## What the fuzzer found
 
 Nothing, in 22 MB of documents and 5.1 million mutations over three seeds:

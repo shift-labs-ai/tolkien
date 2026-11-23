@@ -6,11 +6,20 @@
  * Web Worker to keep a page responsive.
  */
 
-import initEngine, { type InitInput, Lexer as WasmLexer } from "./engine.js";
-import { type EngineLexer, lexerOver } from "./lexer.js";
+import initEngine, {
+  catalog as engineCatalog,
+  type InitInput,
+  Lexer as WasmLexer,
+} from "./engine.js";
+import { catalogOver, type EngineLexer, lexerOver } from "./lexer.js";
 
 export * from "./describe.js";
-export { type Token, Tokens } from "./lexer.js";
+export {
+  type Catalog,
+  type CatalogEntry,
+  type Token,
+  Tokens,
+} from "./lexer.js";
 
 /**
  * Loads the engine. With no argument it is fetched from beside this
@@ -41,4 +50,6 @@ function create(matchers: string): EngineLexer {
 }
 
 export const Lexer = lexerOver(create);
+/** Read it after the engine is loaded. */
+export const catalog = catalogOver(engineCatalog);
 export type Lexer = InstanceType<typeof Lexer>;

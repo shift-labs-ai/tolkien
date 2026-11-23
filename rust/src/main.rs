@@ -4,7 +4,7 @@ use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
 use tolkien::matchers::{LINE_TERMINATION, WHITE_SPACE};
-use tolkien::Lexer;
+use tolkien::{catalog, Lexer};
 
 const USAGE: &str = "\
 Print the tokens of a text, one per line: kind, start, end, text.
@@ -14,6 +14,8 @@ Usage: tolkien [OPTIONS] [TEXT]...
 With no TEXT, reads standard input.
 
 Options:
+  -c, --catalog      Add every matcher of the catalog: addresses, secrets,
+                     card and phone numbers, units and more
   -s, --skip-space   Leave out WHITE_SPACE and LINE_TERMINATION tokens
   -h, --help         Print this help
   -V, --version      Print the version
@@ -21,11 +23,13 @@ Options:
 
 fn main() -> ExitCode {
     let mut skip_space = false;
+    let mut with_catalog = false;
     let mut words = Vec::new();
     let mut options = true;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--" if options => options = false,
+            "-c" | "--catalog" if options => with_catalog = true,
             "-s" | "--skip-space" if options => skip_space = true,
             "-h" | "--help" if options => {
                 print!("{USAGE}");
@@ -54,7 +58,11 @@ fn main() -> ExitCode {
         words.join(" ")
     };
 
-    let lexer = Lexer::default();
+    let lexer = if with_catalog {
+        Lexer::with(catalog::all()).expect("the catalog forms a valid lexer")
+    } else {
+        Lexer::default()
+    };
     let mut out = io::BufWriter::new(io::stdout().lock());
     for token in lexer.tokens(&text) {
         if skip_space && matches!(token.kind, WHITE_SPACE | LINE_TERMINATION) {

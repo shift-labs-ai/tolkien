@@ -33,6 +33,7 @@
 
 #[cfg(feature = "napi")]
 mod bindings;
+pub mod catalog;
 pub mod chars;
 mod cursor;
 // Without a binding nothing calls it, and it is built for its tests.

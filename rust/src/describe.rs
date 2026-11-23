@@ -10,18 +10,22 @@
 //! known by its kind and its end. Offsets are in UTF-16 code units, which
 //! is how JavaScript indexes a string.
 
+use std::collections::BTreeSet;
+use std::sync::{Mutex, PoisonError};
+
 use serde::Deserialize;
 
 use crate::pattern::{Class, Pattern, Step};
-use crate::{Lexer, Matcher, Trie, OTHER};
+use crate::{catalog, Lexer, Matcher, Trie, OTHER};
 
-/// A matcher: a kind, the steps of its pattern, and a count over the
-/// whole token.
+/// A matcher: one of the catalog by its kind, or a kind, the steps of
+/// its pattern and a count over the whole token.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MatcherSpec {
-    kind: String,
-    steps: Vec<StepSpec>,
+    catalog: Option<String>,
+    kind: Option<String>,
+    steps: Option<Vec<StepSpec>>,
     count: Option<CountSpec>,
 }
 
@@ -143,12 +147,56 @@ fn step(spec: StepSpec) -> Result<Step, String> {
     })
 }
 
-fn pattern(spec: MatcherSpec) -> Result<Pattern, String> {
-    let pattern = Pattern::new(&spec.kind, steps(spec.steps)?);
-    Ok(match spec.count {
-        Some(count) => pattern.with_count(class(count.of)?, count.min, count.max),
-        None => pattern,
-    })
+/// The name `kind` for as long as the program runs, as the kind of a
+/// matcher has to be. A name is kept once, however many lexers use it.
+fn kept(kind: String) -> &'static str {
+    static KEPT: Mutex<BTreeSet<&'static str>> = Mutex::new(BTreeSet::new());
+    let mut kept = KEPT.lock().unwrap_or_else(PoisonError::into_inner);
+    match kept.get(kind.as_str()) {
+        Some(known) => known,
+        None => {
+            let kind: &'static str = Box::leak(kind.into_boxed_str());
+            kept.insert(kind);
+            kind
+        }
+    }
+}
+
+fn matcher(spec: MatcherSpec) -> Result<Box<dyn Matcher>, String> {
+    match spec {
+        MatcherSpec {
+            catalog: Some(kind),
+            kind: None,
+            steps: None,
+            count: None,
+        } => catalog::named(&kind).ok_or_else(|| format!("the catalog has no matcher {kind:?}")),
+        MatcherSpec {
+            catalog: None,
+            kind: Some(kind),
+            steps: Some(specs),
+            count,
+        } => {
+            let pattern = Pattern::new(kept(kind), steps(specs)?);
+            Ok(Box::new(match count {
+                Some(count) => pattern.with_count(class(count.of)?, count.min, count.max),
+                None => pattern,
+            }))
+        }
+        _ => Err("a matcher is `catalog`, or `kind` and `steps`".to_string()),
+    }
+}
+
+/// The catalog as a JSON array: for each matcher its kind, its group and
+/// what it matches, in the order they are to be tried.
+pub(crate) fn catalog_json() -> String {
+    let entries = catalog::entries().iter().map(|entry| {
+        serde_json::json!({
+            "kind": entry.kind,
+            "group": entry.group.name(),
+            "summary": entry.summary,
+        })
+    });
+    serde_json::Value::Array(entries.collect()).to_string()
 }
 
 /// A lexer and the kinds of its tokens, each known by its place.
@@ -186,11 +234,11 @@ impl Described {
     pub(crate) fn new(matchers: &str) -> Result<Self, String> {
         let specs: Vec<MatcherSpec> =
             serde_json::from_str(matchers).map_err(|error| format!("not a matcher: {error}"))?;
-        let patterns = specs
+        let matchers = specs
             .into_iter()
-            .map(|spec| Ok(Box::new(pattern(spec)?) as Box<dyn Matcher>))
+            .map(matcher)
             .collect::<Result<Vec<_>, String>>()?;
-        let lexer = Lexer::with(patterns).map_err(|error| error.to_string())?;
+        let lexer = Lexer::with(matchers).map_err(|error| error.to_string())?;
         let kinds: Vec<_> = lexer.kinds().chain([OTHER]).collect();
         if kinds.len() > usize::from(u16::MAX) {
             return Err(format!("{} kinds are too many", kinds.len()));
@@ -457,10 +505,58 @@ mod tests {
     }
 
     #[test]
+    fn a_matcher_of_the_catalog_is_named_by_its_kind() {
+        let matchers = r#"[{"catalog": "MAC_ADDRESS"}, {"catalog": "IPV4"}]"#;
+        let described = Described::new(matchers).unwrap();
+        assert_eq!(described.kinds()[..2], ["MAC_ADDRESS", "IPV4"]);
+        assert_eq!(
+            spans(&described, "1d:d8:97:09:54:39 8.8.8.8"),
+            [
+                ("MAC_ADDRESS".to_string(), 17),
+                ("WHITE_SPACE".to_string(), 18),
+                ("IPV4".to_string(), 25),
+            ]
+        );
+        let listed: serde_json::Value = serde_json::from_str(&catalog_json()).unwrap();
+        let listed = listed.as_array().unwrap();
+        assert_eq!(listed.len(), catalog::entries().len());
+        assert_eq!(listed[0]["kind"], catalog::entries()[0].kind);
+        assert_eq!(listed[0]["group"], "secrets");
+        // Every kind the list names is one a lexer takes.
+        let all: Vec<_> = listed
+            .iter()
+            .map(|entry| format!(r#"{{"catalog": {}}}"#, entry["kind"]))
+            .collect();
+        assert!(Described::new(&format!("[{}]", all.join(","))).is_ok());
+    }
+
+    /// The name of a kind is kept once.
+    #[test]
+    fn a_kind_is_kept_once() {
+        let first = kept("KEPT_ONCE".to_string());
+        assert!(std::ptr::eq(first, kept("KEPT_ONCE".to_string())));
+    }
+
+    #[test]
     fn a_wrong_description_says_what_is_wrong() {
         for (matchers, part) in [
             ("{}", "not a matcher"),
-            (r#"[{"kind": "A"}]"#, "missing field `steps`"),
+            (
+                r#"[{"kind": "A"}]"#,
+                "a matcher is `catalog`, or `kind` and `steps`",
+            ),
+            (
+                r#"[{"catalog": "IPV4", "kind": "A"}]"#,
+                "a matcher is `catalog`",
+            ),
+            (
+                r#"[{"catalog": "NOPE"}]"#,
+                "the catalog has no matcher \"NOPE\"",
+            ),
+            (
+                r#"[{"catalog": "IPV4"}, {"catalog": "IPV4"}]"#,
+                "two matchers produce the kind IPV4",
+            ),
             (
                 r#"[{"kind": "A", "steps": [{"step": "jump"}]}]"#,
                 "unknown variant `jump`",

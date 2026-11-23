@@ -13,7 +13,7 @@ use crate::unicode_tables as tables;
 pub const DATE: &str = "DATE";
 
 #[rustfmt::skip]
-const MONTH_NAMES: &[&str] = &[
+pub(crate) const MONTH_NAMES: &[&str] = &[
     "Jan", "January", "Feb", "February", "Mar", "March", "Apr", "April", "May", "Jun", "June",
     "Jul", "July", "Aug", "August", "Sep", "September", "Oct", "October", "Nov", "November",
     "Dec", "December",

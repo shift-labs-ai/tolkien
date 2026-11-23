@@ -6,7 +6,14 @@
 
 use wasm_bindgen::prelude::*;
 
-use crate::describe::{Described, TokenArrays};
+use crate::describe::{catalog_json, Described, TokenArrays};
+
+/// The catalog as a JSON array: the kind, the group and a summary of each
+/// matcher, in the order they are to be tried.
+#[wasm_bindgen]
+pub fn catalog() -> String {
+    catalog_json()
+}
 
 /// The tokens of a text: for each, the place of its kind in
 /// `Lexer.kinds()` and its end as an index into the JavaScript string.

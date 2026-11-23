@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { matchers, texts } from "../test/fixtures.js";
-import { Lexer, matcher, not, one, run, type Token, text } from "./index.js";
+import {
+  catalog,
+  Lexer,
+  matcher,
+  not,
+  one,
+  run,
+  type Token,
+  text,
+} from "./index.js";
 
 const kindsAndTexts = (tokens: Iterable<Token>) =>
   [...tokens]
@@ -113,6 +122,50 @@ describe("Lexer", () => {
       expect(tokens.kind(last + index)).toBe(once[index].kind);
       expect(tokens.text(last + index)).toBe(once[index].text);
     }
+  });
+
+  test("the catalog adds matchers by name", () => {
+    const entries = catalog.entries();
+    expect(entries.length).toBeGreaterThan(30);
+    expect(entries[0]).toEqual({
+      kind: "AWS_ACCESS_KEY_ID",
+      group: "secrets",
+      summary: expect.any(String),
+    });
+    expect(catalog.all().length).toBe(entries.length);
+    expect(catalog.of("MAC_ADDRESS", "IPV4")).toEqual([
+      { catalog: "IPV4" },
+      { catalog: "MAC_ADDRESS" },
+    ]);
+    expect(catalog.group("network").length).toBeGreaterThan(3);
+    expect(() => catalog.of("NOPE")).toThrow('the catalog has no "NOPE"');
+    expect(() => catalog.group("nope")).toThrow('the catalog has no "nope"');
+
+    const lexer = new Lexer(catalog.all());
+    const tokens = lexer.tokens(
+      "Ping 192.168.1.20 (1d:d8:97:09:54:39), call +1 (555) 010-9999 by 5 PM",
+    );
+    expect(kindsAndTexts(tokens)).toEqual([
+      ["WORD", "Ping"],
+      ["IPV4", "192.168.1.20"],
+      ["SYMBOL", "("],
+      ["MAC_ADDRESS", "1d:d8:97:09:54:39"],
+      ["SYMBOL", ")"],
+      ["SYMBOL", ","],
+      ["WORD", "call"],
+      ["PHONE_NUMBER", "+1 (555) 010-9999"],
+      ["WORD", "by"],
+      ["TIME", "5 PM"],
+    ]);
+    // A matcher of your own stands before those of the catalog, or after.
+    const mixed = new Lexer([
+      matcher("LOCALHOST", [text("127.0.0.1")]),
+      ...catalog.group("network"),
+    ]);
+    expect(kindsAndTexts(mixed.tokens("127.0.0.1 8.8.8.8"))).toEqual([
+      ["LOCALHOST", "127.0.0.1"],
+      ["IPV4", "8.8.8.8"],
+    ]);
   });
 
   test("a wrong matcher is refused with a reason", () => {

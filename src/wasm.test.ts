@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { matchers, texts } from "../test/fixtures.js";
-import { Lexer } from "./index.js";
+import { catalog, Lexer } from "./index.js";
 
 // The browser build is the same engine compiled to wasm32, so its tokens
 // must be the native addon's. Run `bun run build:wasm` first; without its
@@ -18,7 +18,8 @@ describe.skipIf(!built)("wasm package", () => {
 
   test("gives the tokens of the native addon", async () => {
     const wasm = await load();
-    for (const added of [[], matchers]) {
+    expect(wasm.catalog.entries()).toEqual(catalog.entries());
+    for (const added of [[], matchers, catalog.all()]) {
       const native = new Lexer(added);
       const browser = new wasm.Lexer(added);
       expect(browser.kinds).toEqual(native.kinds);
