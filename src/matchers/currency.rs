@@ -74,15 +74,19 @@ fn amount(cur: &mut Cursor<'_>) -> bool {
     true
 }
 
-fn amount_first(cur: &mut Cursor<'_>) -> bool {
-    if !amount(cur) {
-        return false;
-    }
+/// What follows an amount that ends at the cursor: an optional white space
+/// character and a currency name, code or abbreviation that no letter,
+/// digit or apostrophe follows.
+pub(crate) fn name_after_amount(cur: &mut Cursor<'_>) -> bool {
     cur.advance_if(is_whitespace);
     CURRENCIES.advance_longest(cur)
         && !cur
             .peek()
             .is_some_and(|c| is_letter_or_digit(c) || is_apostrophe(c))
+}
+
+fn amount_first(cur: &mut Cursor<'_>) -> bool {
+    amount(cur) && name_after_amount(cur)
 }
 
 impl Matcher for Currency {

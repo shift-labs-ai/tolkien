@@ -22,10 +22,11 @@ pub use base::{
     Digit, Letter, LineTermination, Symbol, WhiteSpace, DIGIT, LETTER, LINE_TERMINATION, SYMBOL,
     WHITE_SPACE,
 };
+pub(crate) use currency::name_after_amount;
 pub use currency::{Currency, CURRENCY};
-pub(crate) use date::starts_with_month;
+pub(crate) use date::{month_may_follow, starts_with_month};
 pub use date::{Date, DATE};
-pub(crate) use email::local_part;
+pub(crate) use email::{is_local_byte as is_email_local_byte, local_part};
 pub use email::{LikeEmail, LIKE_EMAIL};
 pub use iso8601::{Iso8601, DATE_ISO_8601};
 pub use number::{LikeNumber, LIKE_NUMBER};

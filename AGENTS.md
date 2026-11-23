@@ -29,8 +29,8 @@ there.
 - `src/matcher.rs`: the `Matcher` trait (`kind`, `overrides`, `matches`)
 - `src/lexer.rs`: `Lexer` (orders the matchers, runs them, also on several
   threads), `Token`, `Error`
-- `src/shortcuts.rs`: what the default lexer answers for plain words, white
-  space and punctuation without asking a matcher
+- `src/shortcuts.rs`: what the default lexer answers for plain words,
+  numbers, white space and punctuation without asking every matcher
 - `src/matchers/`: one file per built-in matcher; `mod.rs` holds `all()`,
   the default order
 - `src/trie.rs`: `Trie`, longest-word lookup for month and currency names

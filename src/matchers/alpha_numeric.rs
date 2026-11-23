@@ -1,9 +1,10 @@
 //! Identifiers and codes: letters mixed with digits.
 
 use super::BASE;
-use crate::chars::{is_dash, is_digit, is_letter, is_letter_or_digit, is_underscore};
+use crate::chars::{classes, is_dash, is_letter, is_letter_or_digit};
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
+use crate::unicode_tables as tables;
 
 /// Kind of [`AlphaNumericSequence`] tokens.
 pub const ALPHA_NUMERIC_SEQUENCE: &str = "ALPHA_NUMERIC_SEQUENCE";
@@ -34,8 +35,8 @@ impl Matcher for AlphaNumericSequence {
         if !cur.peek().is_some_and(is_letter_or_digit) {
             return false;
         }
-        let (letters, _) =
-            cur.advance_while2(is_letter, |c| is_digit(c) || is_dash(c) || is_underscore(c));
+        const JOINED: u32 = tables::DECIMAL_DIGIT | tables::DASH | tables::UNDERSCORE;
+        let (letters, _) = cur.advance_while2(is_letter, |c| classes(c) & JOINED != 0);
         cur.back_while(is_dash);
         letters > 0
     }

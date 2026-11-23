@@ -14,12 +14,23 @@ struct Node {
 #[derive(Debug)]
 pub struct Trie {
     nodes: Vec<Node>,
+    /// The pairs of ASCII characters that words start with: bit `b` of
+    /// `starts[a]` stands for the words that start with `a` and then `b`.
+    starts: [u128; 128],
+    /// The ASCII characters that are a word, or that start a word whose
+    /// second character is outside ASCII: bit `a` stands for `a`.
+    alone: u128,
+    /// True when a word starts with a character outside ASCII.
+    high: bool,
 }
 
 impl Default for Trie {
     fn default() -> Self {
         Self {
             nodes: vec![Node::default()],
+            starts: [0; 128],
+            alone: 0,
+            high: false,
         }
     }
 }
@@ -67,8 +78,14 @@ impl Trie {
 
     /// Adds `word`. The empty string is ignored.
     pub fn insert(&mut self, word: &str) {
-        if word.is_empty() {
-            return;
+        let mut bytes = word.bytes();
+        match (bytes.next(), bytes.next()) {
+            (None, _) => return,
+            (Some(a), Some(b)) if a.is_ascii() && b.is_ascii() => {
+                self.starts[a as usize] |= 1 << b;
+            }
+            (Some(a), _) if a.is_ascii() => self.alone |= 1 << a,
+            _ => self.high = true,
         }
         let mut node = 0;
         for c in word.chars() {
@@ -96,10 +113,28 @@ impl Trie {
             .map(|i| children[i].1 as usize)
     }
 
+    /// False when no word starts as `text` does, going by its first two
+    /// bytes. Most text that is asked about holds no word, and this says so
+    /// without a walk through the tree.
+    #[inline]
+    fn may_start(&self, text: &[u8]) -> bool {
+        match *text {
+            [] => false,
+            [a, ..] if !a.is_ascii() => self.high,
+            [a, ref rest @ ..] => {
+                let then = |b: &u8| b.is_ascii() && self.starts[a as usize] & 1 << b != 0;
+                self.alone & 1 << a != 0 || rest.first().is_some_and(then)
+            }
+        }
+    }
+
     /// Moves the cursor past the longest word that starts at it and returns
     /// `true`. With no such word the cursor stays where it is and the result
     /// is `false`.
     pub fn advance_longest(&self, cur: &mut Cursor<'_>) -> bool {
+        if !self.may_start(cur.rest().as_bytes()) {
+            return false;
+        }
         let mut node = 0;
         let mut end = None;
         let mut ahead = cur.clone();
@@ -143,6 +178,32 @@ mod tests {
         // "Centi" runs into the path to "Centimo" and has to come back.
         assert_eq!(longest(&trie, "Centi"), Some("Cent"));
         assert_eq!(longest(&trie, "Centimo"), Some("Centimo"));
+    }
+
+    /// The first two bytes rule a text out only when no word starts so.
+    #[test]
+    fn the_first_two_bytes_do_not_rule_out_a_word() {
+        let words = ["K", "kr", "K\u{10D}", "\u{D6}re", "$", "$U", "Bs.F"];
+        let trie = Trie::from_words(words);
+        for word in words {
+            for after in ["", " ", "x", "\u{E9}"] {
+                let text = format!("{word}{after}");
+                assert!(longest(&trie, &text).is_some(), "{text:?}");
+            }
+        }
+        for (text, expected) in [
+            ("k", None),
+            ("ks", None),
+            ("kr", Some("kr")),
+            ("Kr", Some("K")),
+            ("B", None),
+            ("Bs", None),
+            ("\u{E9}", None),
+            ("$$", Some("$")),
+        ] {
+            assert_eq!(longest(&trie, text), expected, "{text:?}");
+        }
+        assert_eq!(longest(&Trie::from_words(["ab"]), "\u{D6}re"), None);
     }
 
     #[test]

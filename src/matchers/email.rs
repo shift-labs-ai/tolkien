@@ -24,7 +24,7 @@ const MAX_LOCAL_PART: usize = 64;
 
 /// A byte of the local part after its first: an ASCII letter or digit, or
 /// one of `_ - . +`.
-fn is_local_byte(byte: u8) -> bool {
+pub(crate) fn is_local_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'+')
 }
 

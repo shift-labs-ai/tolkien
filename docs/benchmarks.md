@@ -114,8 +114,10 @@ now holds its own list of months and catches it.
 
 The fuzzer has two more checks since that run, for the faster lexer: the
 tokens are those of asking every matcher at every position, and they are
-the same when the text is lexed in pieces. Five wrong shortcuts, planted
-one at a time, were each reported.
+the same when the text is lexed in pieces. Twenty wrong shortcut rules,
+planted one at a time, were each caught twice: by the texts of
+`shortcuts_and_hints_change_no_token`, and by the fuzzer within eight
+seconds.
 
 It did not find the defects above, and could not have: every one of them
 was a rule doing what it said. They came from comparing the tokens with

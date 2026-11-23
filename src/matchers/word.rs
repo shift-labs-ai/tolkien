@@ -1,9 +1,10 @@
 //! Words.
 
 use super::BASE;
-use crate::chars::{is_apostrophe, is_dash, is_letter, is_word_termination};
+use crate::chars::{classes, is_apostrophe, is_dash, is_letter, is_word_termination};
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
+use crate::unicode_tables as tables;
 
 /// Kind of [`Word`] tokens.
 pub const WORD: &str = "WORD";
@@ -36,7 +37,7 @@ impl Matcher for Word {
         }
         let mut apostrophe = false;
         let terminated = loop {
-            cur.advance_while(|c| is_letter(c) || is_dash(c));
+            cur.advance_while(|c| classes(c) & (tables::LETTER | tables::DASH) != 0);
             match cur.peek() {
                 Some(c) if is_apostrophe(c) && !apostrophe => {
                     apostrophe = true;

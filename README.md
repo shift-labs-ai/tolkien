@@ -183,16 +183,17 @@ With every built-in matcher, on an Apple M5 laptop with ten cores:
 
 | Text | Size | One thread | Every core, collected |
 |---|---:|---:|---:|
-| Court cases (TAB) | 0.7 MB | 575 MB/s | 500 to 830 MB/s |
-| Sentences with personal data (ai4privacy, English) | 7.6 MB | 420 MB/s | 1,050 MB/s |
-| Documents converted to markdown | 0.6 MB | 355 MB/s | 450 MB/s |
-| Wikipedia in 24 languages and scripts | 2.9 MB | 345 MB/s | 1,050 MB/s |
+| Court cases (TAB) | 0.7 MB | 655 MB/s | 830 MB/s |
+| Sentences with personal data (ai4privacy, English) | 7.6 MB | 505 MB/s | 950 to 1,150 MB/s |
+| Documents converted to markdown | 0.6 MB | 540 MB/s | 500 MB/s |
+| Wikipedia in 24 languages and scripts | 2.9 MB | 485 MB/s | 1,300 MB/s |
 
-That is 80 to 195 million tokens a second on one thread. The figures are the
-best of 40 runs and move by a few percent between runs; on every core, the
-two small files move much more, because starting the threads is a large
-part of a millisecond. The slowest input measured is a long run of single
-digits and spaces, at about 50 MB/s on one thread.
+That is 115 to 230 million tokens a second on one thread. The figures are
+the best of 40 runs and move by a few percent between runs. On every core,
+the two small files gain little or nothing, because starting the threads
+is a large part of a millisecond. The slowest inputs measured are long
+runs of very short tokens the shortcuts do not cover, such as digits of
+other scripts, at about 110 MB/s on one thread.
 
 ```bash
 cargo run --release --example throughput -- FILE
@@ -206,12 +207,13 @@ Three things make it fast, and none of them changes a token:
   which first characters a matcher takes; the lexer lists, for each ASCII
   character, the matchers worth asking. A space asks one matcher, not
   sixteen.
-- **The default lexer knows the commonest tokens.** A plain word, a run of
-  white space and a punctuation mark are most of a text, and
-  `src/shortcuts.rs` reads them straight from the bytes, eight at a time
-  for a word. It restates what the matchers would answer together, so the
-  tests and the fuzzer compare it with asking every matcher at every
-  position.
+- **The default lexer knows the commonest tokens.** A plain word, a
+  number, a run of white space and a punctuation mark are most of a text,
+  and `src/shortcuts.rs` reads them straight from the bytes, eight at a
+  time for a word. Where the bytes leave a chance to one matcher or two, as
+  a month name does to a date, it asks those and no other. It restates what
+  the matchers would answer together, so the tests and the fuzzer compare
+  it with asking every matcher at every position.
 
 `Lexer::tokens_parallel` lexes a long text on every core: the text is cut
 into pieces, each thread lexes one, and the pieces are joined where their

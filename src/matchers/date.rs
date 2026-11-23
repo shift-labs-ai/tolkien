@@ -3,10 +3,11 @@
 use std::sync::LazyLock;
 
 use super::BASE;
-use crate::chars::{is_comma, is_dash, is_full_stop, is_letter, is_slash, is_underscore};
+use crate::chars::{classes, is_letter};
 use crate::cursor::Cursor;
 use crate::matcher::Matcher;
 use crate::trie::Trie;
+use crate::unicode_tables as tables;
 
 /// Kind of [`Date`] tokens.
 pub const DATE: &str = "DATE";
@@ -48,12 +49,17 @@ static MONTHS: LazyLock<Trie> = LazyLock::new(|| Trie::from_words_in_common_case
 /// `99 Feb 9999` passes.
 pub struct Date;
 
+/// The classes of the marks that separate the numbers of a date: dashes,
+/// full stops, underscores and slashes.
+const NUMERIC_SEPARATORS: u32 =
+    tables::DASH | tables::FULL_STOP | tables::UNDERSCORE | tables::SLASH;
+
 fn is_numeric_separator(c: char) -> bool {
-    c == ' ' || is_dash(c) || is_full_stop(c) || is_underscore(c) || is_slash(c)
+    c == ' ' || classes(c) & NUMERIC_SEPARATORS != 0
 }
 
 fn is_separator(c: char) -> bool {
-    is_numeric_separator(c) || is_comma(c)
+    c == ' ' || classes(c) & (NUMERIC_SEPARATORS | tables::COMMA) != 0
 }
 
 fn is_ascii_digit(c: char) -> bool {
@@ -159,6 +165,18 @@ pub(crate) fn starts_with_month(text: &[u8], len: usize) -> bool {
         && MONTH_NAMES
             .iter()
             .any(|name| name.as_bytes().eq_ignore_ascii_case(&text[..len]))
+}
+
+/// True when a month name may follow a number that ends where `bytes`
+/// starts: after the separators there, the first three letters of one
+/// stand, or a character outside ASCII, which may be a separator too.
+pub(crate) fn month_may_follow(bytes: &[u8]) -> bool {
+    let separators = bytes
+        .iter()
+        .take_while(|&&byte| byte.is_ascii() && is_separator(byte as char))
+        .count();
+    let rest = &bytes[separators..];
+    rest.first().is_some_and(|byte| !byte.is_ascii()) || may_start_with_month(rest)
 }
 
 /// A month name and the full stop of an abbreviation, if there is one.

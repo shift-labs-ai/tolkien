@@ -267,7 +267,8 @@ impl Default for Lexer {
     ///
     /// It gives the same tokens as `Lexer::new(matchers::all())` and is
     /// several times faster: it knows what the built-in matchers answer for
-    /// plain words, white space and punctuation without asking each of them.
+    /// plain words, numbers, white space and punctuation without asking
+    /// each of them.
     fn default() -> Self {
         let lexer = Self::new(matchers::all()).expect("the built-in matchers form a valid lexer");
         Self {

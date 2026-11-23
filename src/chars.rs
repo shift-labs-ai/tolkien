@@ -40,6 +40,15 @@ pub(crate) const NUMBER_PUNCTUATION: u32 = tables::FULL_STOP
     | tables::DASH_PUNCTUATION
     | tables::CONNECTOR_PUNCTUATION;
 
+/// The classes of what may follow a word: white space and sentence
+/// punctuation.
+pub(crate) const WORD_TERMINATION: u32 = tables::WHITE_SPACE
+    | tables::FULL_STOP
+    | tables::COMMA
+    | tables::COLON
+    | tables::QUESTION_MARK
+    | tables::EXCLAMATION_MARK;
+
 /// The classes of `c`, as a mask of the bits in the tables.
 #[inline]
 pub(crate) fn classes(c: char) -> u32 {
@@ -204,13 +213,7 @@ pub fn is_line_termination(c: char) -> bool {
 /// White space or sentence punctuation (`. , : ? !`): what may follow a word.
 #[inline]
 pub fn is_word_termination(c: char) -> bool {
-    const TERMINATION: u32 = tables::WHITE_SPACE
-        | tables::FULL_STOP
-        | tables::COMMA
-        | tables::COLON
-        | tables::QUESTION_MARK
-        | tables::EXCLAMATION_MARK;
-    is(c, TERMINATION)
+    is(c, WORD_TERMINATION)
 }
 
 #[cfg(test)]
