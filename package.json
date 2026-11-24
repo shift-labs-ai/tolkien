@@ -11,7 +11,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./cli": "./dist/main.js"
+  },
+  "bin": {
+    "tolkien": "./dist/main.js"
   },
   "files": [
     "dist",
@@ -26,7 +30,8 @@
     "build:native": "napi build --release --strip --platform --features napi --cargo-flags=--no-default-features --cargo-cwd rust",
     "build:wasm": "cd rust && cargo build --lib --release --target wasm32-unknown-unknown --no-default-features --features wasm && wasm-bindgen --target web --out-dir ../npm/wasm --out-name engine target/wasm32-unknown-unknown/release/tolkien.wasm && cd .. && tsc -p tsconfig.wasm.json",
     "artifacts": "napi artifacts",
-    "verify": "tools/verify.sh"
+    "verify": "tools/verify.sh",
+    "dev": "bun run src/main.ts"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -51,6 +56,10 @@
     "rust"
   ],
   "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
     "@napi-rs/cli": "2.18.4",

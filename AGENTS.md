@@ -33,7 +33,8 @@ that script and nothing else, so a check is added there.
 bun install                 # once
 npm run build:native        # the addon for this machine, tolkien.<platform>.node
 npm run build:wasm          # npm/wasm: the engine and its JavaScript
-bun test                    # the Node package, and the wasm package against it
+bun test                    # the Node package, its command, and the wasm package against it
+bun run dev -- -t "some text"   # the command, from source
 ```
 
 ## Architecture
@@ -60,7 +61,8 @@ bun test                    # the Node package, and the wasm package against it
 - `rust/src/matchers/currency_data.rs`: currency names and symbols from fastlex
 - `tools/gen_unicode.py`: the rules that define every character table
 - `docs/charsets.md`: generated listing of every named set, for review
-- `rust/src/main.rs`: the `tolkien` command
+- `rust/src/main.rs`: the `tolkien` command of the crate, for work on the
+  lexer: the arguments of the npm one, and few of its options
 - `rust/tests/lexer.rs`: tests of the lexer as a whole
 - `rust/tests/support/reference.rs`: the plain way to lex, every matcher asked
   at every position; the tests and the fuzzer both include it and compare
@@ -76,6 +78,9 @@ bun test                    # the Node package, and the wasm package against it
 - `src/describe.ts`: the builders a JavaScript user describes a matcher
   with; `src/lexer.ts`: `Lexer` and `Tokens` over either engine;
   `src/index.ts` and `src/wasm.ts`: the entry of each package
+- `src/main.ts`: the `tolkien` command of the npm package (commander),
+  with a file for each command in `src/commands/` and what they print with
+  in `src/utils/`; `src/main.test.ts` runs it
 - `native.cjs`: loads the addon of the platform
 - `npm/`: a package for each platform's addon, and `npm/wasm` for browsers
 - `test/fixtures.ts`: matchers and texts both packages are tested with
@@ -108,6 +113,18 @@ bun test                    # the Node package, and the wasm package against it
   `npm/`, a case in `native.cjs` and a row in the release workflow.
   Versions are the same in `rust/Cargo.toml`, `package.json` and every
   `npm/*/package.json`; the release workflow refuses a tag that differs.
+- **A library and a command, as markit and codemode are.** The npm
+  package exports the library from `dist/index.js` and has the command
+  as its `bin`, `dist/main.js`, also exported as `./cli`. `src/main.ts`
+  declares options and commands and nothing else; a command is a function
+  in `src/commands/` that it imports when the command runs, so `--help`
+  does not load the engine. A command calls the library as a user does,
+  and prints through `output()` in `src/utils/output.ts`: every command
+  takes `--json` and `-q`. The command's dependencies (`commander`,
+  `chalk`) are the package's only ones, and the library imports neither;
+  the browser package is built from `src/wasm.ts` alone and has no
+  command. Where the two commands take the same argument it means the
+  same: change both.
 - **A binding passes data, never a callback.** A call from Rust into
   JavaScript for every token would cost far more than the token. Matchers
   come over once as JSON and become `Pattern`s (`describe.rs`), and tokens

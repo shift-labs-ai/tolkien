@@ -35,3 +35,5 @@ npm run build
 npm pack --dry-run >/dev/null
 npm pack --dry-run ./npm/wasm >/dev/null
 node -e "import('./dist/index.js').then(({ Lexer }) => { const token = new Lexer().tokens('built').at(0); if (token.kind !== 'WORD' || token.text !== 'built') process.exit(1) })"
+# The command as Node runs it from the built package.
+test "$(node dist/main.js --text built)" = "$(printf 'WORD\t0\t5\t"built"')"

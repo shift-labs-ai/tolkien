@@ -31,7 +31,8 @@ TIME         39..46 "8:05 PM"
 
 tolkien is a Rust rewrite of [fastlex](https://github.com/Michaelliv/fastlex),
 a Kotlin library. The crate has no dependencies. It is also an npm package
-for [Node and for browsers](#from-javascript).
+for [Node and for browsers](#from-javascript), and a
+[command](#command-line).
 
 ## How it works
 
@@ -463,11 +464,62 @@ is lexed on the calling thread, so lex a long one in a Web Worker.
 
 ## Command line
 
+The npm package is also a command:
+
+```bash
+npm install -g @shiftlabs/tolkien
+
+tolkien notes.txt                          # tokens of a file: kind, start, end, text
+tolkien -t "Mail dana@acme.com by 2026-11-23"   # tokens of a text
+cat notes.txt | tolkien -                  # tokens of stdin
+tolkien notes.txt -c -k IPV4,CARD_NUMBER   # the whole catalog, two kinds only
+tolkien notes.txt -g secrets -o found.tsv  # one group of the catalog, to a file
+tolkien kinds                              # every kind, and the groups of the catalog
+```
+
+```text
+$ tolkien -t "ssh 192.168.1.20, card 4111 1111 1111 1111" -c -k IPV4,CARD_NUMBER
+IPV4	4	16	"192.168.1.20"
+CARD_NUMBER	23	42	"4111 1111 1111 1111"
+```
+
+| Option | What it does |
+|---|---|
+| `-t, --text <text>` | Lex this text instead of a file |
+| `-c, --catalog` | Add every matcher of the catalog |
+| `-g, --group <names>` | Add groups of the catalog: `network`, `secrets`, `finance`, `personal`, `technical`, `text` |
+| `-k, --kind <kinds>` | Print only tokens of these kinds |
+| `-s, --skip-space` | Leave out white space and line breaks |
+| `-o, --output <file>` | Write to a file instead of stdout |
+| `--json` | Output as JSON |
+| `-q, --quiet` | Tab-separated lines only, no decoration |
+
+Start and end are indexes into the text as a JavaScript string, as in
+the package. Into a pipe or a file a token is a line of four fields with
+tabs between them, the text as a JSON string; in a terminal the columns
+are lined up. A mistake of yours exits with status 2, a file that cannot
+be read with 1.
+
+### For agents
+
+Every command takes `--json`.
+
+```bash
+tolkien notes.txt -g secrets --json   # { success, source, count, tokens: [{ kind, start, end, text }] }
+tolkien kinds --json                  # { builtIn, catalog: [{ kind, group, summary }] }
+tolkien onboard                       # add instructions to CLAUDE.md or AGENTS.md
+```
+
+### In the crate
+
+The crate has a command of its own for work on the lexer, with the same
+arguments and the few options a developer needs. Its offsets are bytes.
+
 ```bash
 cd rust
-cargo run -- "Mail dana@acme.com by 2026-11-23"   # kind, start, end, text
-cargo run -- --skip-space < notes.txt
-cargo run -- --catalog "ssh 192.168.1.20"         # with every matcher of the catalog
+cargo run -- -t "Mail dana@acme.com by 2026-11-23"
+cargo run -- --skip-space notes.txt
+cargo run -- --catalog -t "ssh 192.168.1.20"
 ```
 
 ## Character sets
