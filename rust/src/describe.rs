@@ -476,9 +476,39 @@ mod tests {
         assert_eq!(described.kinds()[0], "CARD_NUMBER");
     }
 
+    /// Every kind of step the engine has can be described, and under the
+    /// name the engine gives it: the names a description may use, which
+    /// serde lists when it refuses one, are those of
+    /// [`DESCRIBED`](crate::pattern::DESCRIBED).
     #[test]
-    fn every_step_can_be_described() {
-        let matchers = r#"[{"kind": "EVERYTHING", "steps": [
+    fn every_step_of_the_engine_has_a_description() {
+        let refused = serde_json::from_str::<StepSpec>(r#"{"step": "jump"}"#)
+            .err()
+            .expect("no step is named jump")
+            .to_string();
+        let (_, listed) = refused.split_once("expected one of").expect(&refused);
+        let mut known: Vec<_> = listed.split('`').skip(1).step_by(2).collect();
+        let mut described = crate::pattern::DESCRIBED.to_vec();
+        known.sort_unstable();
+        described.sort_unstable();
+        assert_eq!(known, described);
+
+        // Each description gives the step of its name.
+        let specs: serde_json::Value = serde_json::from_str(EVERY_STEP).unwrap();
+        let mut seen = Vec::new();
+        for spec in specs[0]["steps"].as_array().unwrap() {
+            let name = spec["step"].as_str().unwrap();
+            let built = step(serde_json::from_value(spec.clone()).unwrap()).unwrap();
+            assert_eq!(built.described_as(), name);
+            seen.push(name);
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen, described, "a step is missing from EVERY_STEP");
+    }
+
+    /// A matcher that uses every step.
+    const EVERY_STEP: &str = r#"[{"kind": "EVERYTHING", "steps": [
             {"step": "text", "text": "id:"},
             {"step": "words", "words": ["a", "b"], "commonCases": true},
             {"step": "number", "maxDigits": 3, "maxValue": 255},
@@ -489,9 +519,14 @@ mod tests {
             {"step": "either", "choices": [[{"step": "text", "text": "x"}], []]},
             {"step": "run", "class": [{"chars": "."}], "min": 0},
             {"step": "trimEnd", "class": [{"chars": "."}]},
-            {"step": "notBefore", "steps": [{"step": "text", "text": "!"}]}
+            {"step": "notBefore", "steps": [{"step": "text", "text": "!"}]},
+            {"step": "repeat", "max": 2, "steps": [{"step": "text", "text": "+"}]},
+            {"step": "not", "class": [{"named": "letter"}]}
         ]}]"#;
-        let described = Described::new(matchers).unwrap();
+
+    #[test]
+    fn every_step_can_be_described() {
+        let described = Described::new(EVERY_STEP).unwrap();
         assert_eq!(
             spans(&described, "id:A12-ab-x.. "),
             [

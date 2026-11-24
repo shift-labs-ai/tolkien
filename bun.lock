@@ -18,6 +18,7 @@
         "@shiftlabs/tolkien-linux-arm64-musl": "0.1.0",
         "@shiftlabs/tolkien-linux-x64-gnu": "0.1.0",
         "@shiftlabs/tolkien-linux-x64-musl": "0.1.0",
+        "@shiftlabs/tolkien-win32-x64-msvc": "0.1.0",
       },
     },
   },

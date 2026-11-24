@@ -2,7 +2,9 @@
 
 A lexer for natural text: one pass turns a `&str` into typed tokens (words,
 numbers, dates, times, emails, URLs, amounts of money). A Rust rewrite of the
-Kotlin library `Michaelliv/fastlex`. Internal: `publish = false`.
+Kotlin library `Michaelliv/fastlex`. The repository is private until its
+owner makes it public; nothing is published to npm or crates.io without
+being asked for.
 
 ## Commands
 
@@ -78,7 +80,9 @@ bun test                    # the Node package, and the wasm package against it
 - `npm/`: a package for each platform's addon, and `npm/wasm` for browsers
 - `test/fixtures.ts`: matchers and texts both packages are tested with
 - `.github/workflows/release.yml`: builds every addon and the wasm package
-  from a `v*` tag and publishes them
+  from a `v*` tag, loads each addon where it was built
+  (`tools/load-addon.cjs`) and publishes them; run by hand, it does all
+  but publish
 - `tools/verify.sh`: every check, for CI and for a person
 - `rust/examples/fuzz.rs`: the fuzzer, over the default lexer, the whole
   catalog and each group of it; its `shape` function states every built-in
@@ -100,6 +104,8 @@ bun test                    # the Node package, and the wasm package against it
   the crate in `rust/` with the bindings as features (`napi`, `wasm`), the
   Node package at the root (`package.json`, `src/`, `native.cjs`), a
   package for each platform's addon and one for the browser in `npm/`.
+  A platform is four things: a triple in `package.json`, a package in
+  `npm/`, a case in `native.cjs` and a row in the release workflow.
   Versions are the same in `rust/Cargo.toml`, `package.json` and every
   `npm/*/package.json`; the release workflow refuses a tag that differs.
 - **A binding passes data, never a callback.** A call from Rust into
@@ -111,9 +117,12 @@ bun test                    # the Node package, and the wasm package against it
   `wasm.rs` only hand it to napi and to wasm-bindgen.
 - **A step has three homes**: `Step` in `pattern.rs`, `StepSpec` in
   `describe.rs` and a builder in `src/describe.ts`. Add to all three, to
-  `every_step_can_be_described` and to `every step has a builder the
-  engine takes` in `src/index.test.ts`, which compares the steps the
-  builders give with the list the engine gives.
+  `EVERY_STEP` in `describe.rs` and to `every step has a builder the
+  engine takes` in `src/index.test.ts`. Each pair is held together: a
+  new `Step` does not compile under test until `Step::described_as`
+  names it, `every_step_of_the_engine_has_a_description` compares those
+  names with the ones `StepSpec` takes, and the TypeScript test compares
+  the steps the builders give with the list the engine gives.
 - **No regular expressions.** A matcher reads characters from the cursor.
 - **Matcher contract.** `matches` returns `true` with the cursor just past
   the token, or `false` with the cursor anywhere. The lexer gives each

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "A fast lexer for natural text: one pass turns text into typed tokens such as words, numbers, dates, emails and URLs."
-# Internal for now: the name is not cleared for a public release.
-publish = false
+repository = "https://github.com/shift-labs-ai/tolkien"
+readme = "../README.md"
 
 # The library needs none of these: each is behind a feature that only a
 # binding turns on.

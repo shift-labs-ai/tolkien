@@ -69,6 +69,15 @@ try {
           throw new Error(`Unsupported architecture on Linux: ${arch}`);
       }
       break;
+    case 'win32':
+      switch (arch) {
+        case 'x64':
+          nativeBinding = tryLoad('tolkien.win32-x64-msvc.node', '@shiftlabs/tolkien-win32-x64-msvc');
+          break;
+        default:
+          throw new Error(`Unsupported architecture on Windows: ${arch}`);
+      }
+      break;
     default:
       throw new Error(`Unsupported platform: ${platform}-${arch}`);
   }

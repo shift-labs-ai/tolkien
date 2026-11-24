@@ -1,0 +1,23 @@
+{
+  "name": "@shiftlabs/tolkien-win32-x64-msvc",
+  "version": "0.1.0",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "tolkien.win32-x64-msvc.node",
+  "files": [
+    "tolkien.win32-x64-msvc.node"
+  ],
+  "description": "Native Rust binary for @shiftlabs/tolkien",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shift-labs-ai/tolkien.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

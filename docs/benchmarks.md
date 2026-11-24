@@ -19,7 +19,7 @@ cargo run --release --example fuzz -- --seconds 60 ../corpus/docs/*.txt
 | `tab` | Text Anonymization Benchmark, dev split: court cases labelled by hand | 127 | 10,078 |
 | `wikipedia` | one article in each of 24 languages and scripts | 24 | none |
 | `markit` | markit's benchmark documents converted to markdown | 10 | none |
-| `code` | this repository's sources | 31 | none |
+| `code` | this repository's sources | 39 | none |
 
 The ai4privacy text is generated, and it shows: currencies are glued to
 amounts (`764,336.48Rufiyaa`), and a "time" can be the bare number `20`. Its

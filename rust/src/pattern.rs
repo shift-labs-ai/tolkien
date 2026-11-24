@@ -315,6 +315,27 @@ impl Step {
         Self(Kind::TrimEnd(class))
     }
 
+    /// The name the step is described by: its place in [`DESCRIBED`]. A
+    /// new kind of step needs an arm here, and the arm needs a name there:
+    /// a place past the end of the list does not compile.
+    #[cfg(all(test, feature = "describe"))]
+    pub(crate) fn described_as(&self) -> &'static str {
+        match &self.0 {
+            Kind::Run { .. } => DESCRIBED[0],
+            Kind::Text(_) => DESCRIBED[1],
+            Kind::Words(_) => DESCRIBED[2],
+            Kind::Number { .. } => DESCRIBED[3],
+            Kind::Separator(_) => DESCRIBED[4],
+            Kind::SameSeparator => DESCRIBED[5],
+            Kind::Not(_) => DESCRIBED[6],
+            Kind::NotBefore(_) => DESCRIBED[7],
+            Kind::Optional(_) => DESCRIBED[8],
+            Kind::Repeat { .. } => DESCRIBED[9],
+            Kind::Either(_) => DESCRIBED[10],
+            Kind::TrimEnd(_) => DESCRIBED[11],
+        }
+    }
+
     /// Does the step at the cursor. `separator` is the character the
     /// pattern remembers.
     fn matches(&self, cur: &mut Cursor<'_>, separator: &mut Option<char>) -> bool {
@@ -419,6 +440,25 @@ impl Step {
         }
     }
 }
+
+/// The names every kind of step is described by, to a binding: those of
+/// `StepSpec` in `describe.rs`, which a test there holds to this list. It
+/// is built for that test only.
+#[cfg(all(test, feature = "describe"))]
+pub(crate) const DESCRIBED: [&str; 12] = [
+    "run",
+    "text",
+    "words",
+    "number",
+    "separator",
+    "sameSeparator",
+    "not",
+    "notBefore",
+    "optional",
+    "repeat",
+    "either",
+    "trimEnd",
+];
 
 /// The first character of a text, as far as it is known.
 #[derive(Clone, Copy)]

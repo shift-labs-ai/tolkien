@@ -396,7 +396,7 @@ The same lexer runs in Node, as a native addon, and in a browser, as
 WebAssembly. Both packages have one API.
 
 ```bash
-npm install @shiftlabs/tolkien        # Node 20.19 or later; macOS and Linux
+npm install @shiftlabs/tolkien        # Node 20.19 or later; macOS, Linux and Windows
 npm install @shiftlabs/tolkien-wasm   # browsers
 ```
 
