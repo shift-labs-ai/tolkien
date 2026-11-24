@@ -209,26 +209,26 @@ fn amount() -> [Step; 2] {
 /// An IPv6 address: eight groups of one to four hex digits joined by
 /// colons, or fewer with one `::` standing for the groups left out. The
 /// last two groups may be written as an IPv4 address: `::ffff:192.0.2.1`.
-struct Ipv6;
+struct Ipv6 {
+    /// The four numbers of an IPv4 address: [`ipv4_parts`].
+    ipv4: Pattern,
+}
 
 impl Ipv6 {
-    /// Four numbers from 0 to 255 joined by full stops, if they stand at
-    /// the cursor.
-    fn ipv4(cur: &mut Cursor<'_>) -> bool {
-        let mut ahead = cur.clone();
-        for part in 0..4 {
-            if part > 0 && !ahead.advance_if(|c| c == '.') {
-                return false;
-            }
-            let start = ahead.pos();
-            let digits = ahead.advance_while(|c| c.is_ascii_digit());
-            let value = ahead.since(start).parse::<u16>();
-            if !(1..=3).contains(&digits) || value.map_or(true, |value| value > 255) {
-                return false;
-            }
+    fn new() -> Self {
+        Self {
+            ipv4: Pattern::new(IPV6, ipv4_parts()),
         }
-        cur.set_pos(ahead.pos());
-        true
+    }
+
+    /// Moves past an IPv4 address, if one stands at the cursor.
+    fn ipv4(&self, cur: &mut Cursor<'_>) -> bool {
+        let mut ahead = cur.clone();
+        let found = self.ipv4.matches(&mut ahead);
+        if found {
+            cur.set_pos(ahead.pos());
+        }
+        found
     }
 }
 
@@ -246,7 +246,7 @@ impl Matcher for Ipv6 {
         let mut groups = 0;
         while groups < 8 {
             // An IPv4 address is the last two groups.
-            if groups <= 6 && Self::ipv4(cur) {
+            if groups <= 6 && self.ipv4(cur) {
                 groups += 2;
                 break;
             }
@@ -789,7 +789,7 @@ const ENTRIES: &[Entry] = &[
             "::ffff:1.2.3.4.5",
             "1:2:3:4:5:6:7:1.2.3.4",
         ],
-        build: || Box::new(Ipv6),
+        build: || Box::new(Ipv6::new()),
     },
     Entry {
         kind: MAC_ADDRESS,

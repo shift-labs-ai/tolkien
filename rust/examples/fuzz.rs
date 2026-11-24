@@ -11,10 +11,9 @@
 //! Three lexers are checked: the default one and the default one with the
 //! whole catalog added, on every text, and the default one with one group
 //! of the catalog on every mutated text, a different group from text to
-//! text. Between them they run
-//! every built-in matcher, every matcher of the catalog, patterns and
-//! matchers written by hand, and a lexer whose shortcuts are in use for
-//! some first characters and not for others.
+//! text. Between them they run every built-in matcher, every matcher of
+//! the catalog, patterns and matchers written by hand, and a lexer whose
+//! shortcuts are in use for some first characters and not for others.
 //!
 //! A check is a property that must hold for any text:
 //!

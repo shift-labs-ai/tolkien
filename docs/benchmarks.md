@@ -130,10 +130,10 @@ The labels a built-in matcher covers are unchanged with the catalog:
 `DATE` 67.8%, `TIME` 66.0%, `EMAIL` and `URL` 99.8%.
 
 Labels say what a matcher finds, not what it finds by mistake. For that,
-the tokens of every kind of the catalog were read in the four corpora
-without labels (court cases, Wikipedia, converted documents, this
-repository), and then in the text of the labelled ones. The first version
-was wrong in ten ways, each now a refused example of its entry:
+the tokens of every kind of the catalog were read in the court cases,
+Wikipedia, the converted documents and this repository, where no label
+covers them, and then in the text of the ai4privacy sentences. The first
+version was wrong in ten ways, each now a refused example of its entry:
 
 | What was found | Taken for | Now |
 |---|---|---|
@@ -182,13 +182,13 @@ seconds.
 
 It now checks three lexers: the default one and the default one with the
 whole catalog on every text, and the default one with one group of the
-catalog on every mutated text.
-Five bugs were planted in what only those lexers run. It reported the
-three in the lexer within twelve seconds, and a card number with no bound
-on its groups by its time. It missed a telephone number with no bound: the
-run that shows it, `01 01 01`, is one a random mutation seldom builds. The
-fuzzer now builds such runs itself, from the first characters of every
-example of the catalog, and reports that one every time.
+catalog on every mutated text. Five bugs were planted in what only those
+lexers run. It reported the three in the lexer within twelve seconds, and
+a card number with no bound on its groups by its time. It missed a
+telephone number with no bound: the run that shows it, `01 01 01`, is one
+a random mutation seldom builds. The fuzzer now builds such runs itself,
+from the first characters of every example of the catalog, and reports
+that one every time.
 
 It did not find the defects above, and could not have: every one of them
 was a rule doing what it said. They came from comparing the tokens with

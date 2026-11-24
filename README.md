@@ -227,10 +227,9 @@ cargo build --release && python3 ../tools/evaluate.py             # labelled spa
   before it, and the time is in proportion to the length. It checks three
   lexers: the default one and the default one with the whole catalog on
   every text, and the default one with one group of it on every mutated
-  text. The start of every
-  example of the catalog is also repeated into a long run and timed, which
-  is where a matcher that reads without a bound shows. A failing text is
-  cut down and printed.
+  text. The start of every example of the catalog is also repeated into a
+  long run and timed, which is where a matcher that reads without a bound
+  shows. A failing text is cut down and printed.
 - **`tools/evaluate.py`** compares the tokens with the spans people labelled
   in two datasets: is an email address, a date or a card number one token,
   and of the expected kind? `docs/benchmarks.md` holds the results.

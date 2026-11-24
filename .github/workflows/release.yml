@@ -18,13 +18,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify versions
         run: |
+          root=$(node -p "require('./package.json').version")
           # Run by hand there is no tag: the packages are held to each other.
+          tag="$root"
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             tag="${GITHUB_REF_NAME#v}"
-          else
-            tag=$(node -p "require('./package.json').version")
           fi
-          root=$(node -p "require('./package.json').version")
           rust=$(sed -n 's/^version = "\([^"]*\)"/\1/p' rust/Cargo.toml | head -1)
           if [ "$tag" != "$root" ] || [ "$tag" != "$rust" ]; then
             echo "Tag v$tag, package.json $root, rust/Cargo.toml $rust must match" >&2
@@ -68,6 +67,10 @@ jobs:
     name: build ${{ matrix.target }}
     needs: check-version
     runs-on: ${{ matrix.os }}
+    # The same shell on every machine, Windows included.
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -126,12 +129,9 @@ jobs:
       # npm. One built for the machine it was built on is loaded here.
       - name: Load the addon
         if: matrix.loads
-        shell: bash
         run: node tools/load-addon.cjs
-      # A musl addon is cross-linked here but only ever loaded by musl's
-      # dynamic loader, which refuses things glibc accepts. Load it on
-      # Alpine and lex a text, so a broken addon fails the release instead
-      # of reaching npm.
+      # A musl addon is cross-linked here, and musl's dynamic loader
+      # refuses things glibc accepts: it is loaded on Alpine.
       - name: Load the addon on Alpine
         if: matrix.musl
         run: |

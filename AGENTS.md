@@ -184,8 +184,9 @@ bun test                    # the Node package, and the wasm package against it
   matchers do. `can_start` decides where a matcher is asked, so it must be
   true for the first character of every token the matcher is to find, and
   a shortcut must answer what the matchers, asked in order, would. Both
-  are compared with asking every matcher at every position: `shortcuts_and_hints_change_no_token` and the random-text test
-  in `rust/tests/lexer.rs`, and the fuzzer's `reference` check. **A new matcher,
+  are compared with asking every matcher at every position:
+  `shortcuts_and_hints_change_no_token` and the random-text test in
+  `rust/tests/lexer.rs`, and the fuzzer's `reference` check. **A new matcher,
   or a matcher that takes a new first character or a new kind of text, has
   to be checked against every rule in `shortcuts.rs`**; each rule names the
   matchers it has ruled out. Where a rule takes more than a few bytes to

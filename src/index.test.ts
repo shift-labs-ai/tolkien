@@ -220,10 +220,11 @@ describe("Lexer", () => {
       ],
       { count: { of: [letter, digit], min: 1, max: 40 } },
     );
-    expect(stepsOfTheEngine().length).toBeGreaterThan(10);
+    const known = stepsOfTheEngine();
+    expect(known).not.toEqual([]);
     expect(
       [...new Set(everything.steps.map((step) => step.step))].sort(),
-    ).toEqual(stepsOfTheEngine());
+    ).toEqual(known);
     const lexer = new Lexer([everything]);
     expect(lexer.tokens("id:A12-ab-x-7.. ").at(0)).toEqual({
       kind: "EVERYTHING",

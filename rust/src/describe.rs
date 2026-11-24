@@ -361,6 +361,23 @@ mod tests {
         "count": {"of": [{"range": ["0", "9"]}], "min": 13, "max": 19}
     }"#;
 
+    /// A matcher that uses every step.
+    const EVERY_STEP: &str = r#"[{"kind": "EVERYTHING", "steps": [
+            {"step": "text", "text": "id:"},
+            {"step": "words", "words": ["a", "b"], "commonCases": true},
+            {"step": "number", "maxDigits": 3, "maxValue": 255},
+            {"step": "separator", "class": [{"chars": ":-"}]},
+            {"step": "run", "class": [{"named": "letter"}], "min": 2, "max": 2},
+            {"step": "sameSeparator"},
+            {"step": "optional", "steps": [{"step": "text", "text": "?"}]},
+            {"step": "either", "choices": [[{"step": "text", "text": "x"}], []]},
+            {"step": "run", "class": [{"chars": "."}], "min": 0},
+            {"step": "trimEnd", "class": [{"chars": "."}]},
+            {"step": "notBefore", "steps": [{"step": "text", "text": "!"}]},
+            {"step": "repeat", "max": 2, "steps": [{"step": "text", "text": "+"}]},
+            {"step": "not", "class": [{"named": "letter"}]}
+        ]}]"#;
+
     fn spans(described: &Described, text: &str) -> Vec<(String, u32)> {
         let arrays = described.tokens(text);
         let kinds = described.kinds();
@@ -506,23 +523,6 @@ mod tests {
         seen.dedup();
         assert_eq!(seen, described, "a step is missing from EVERY_STEP");
     }
-
-    /// A matcher that uses every step.
-    const EVERY_STEP: &str = r#"[{"kind": "EVERYTHING", "steps": [
-            {"step": "text", "text": "id:"},
-            {"step": "words", "words": ["a", "b"], "commonCases": true},
-            {"step": "number", "maxDigits": 3, "maxValue": 255},
-            {"step": "separator", "class": [{"chars": ":-"}]},
-            {"step": "run", "class": [{"named": "letter"}], "min": 2, "max": 2},
-            {"step": "sameSeparator"},
-            {"step": "optional", "steps": [{"step": "text", "text": "?"}]},
-            {"step": "either", "choices": [[{"step": "text", "text": "x"}], []]},
-            {"step": "run", "class": [{"chars": "."}], "min": 0},
-            {"step": "trimEnd", "class": [{"chars": "."}]},
-            {"step": "notBefore", "steps": [{"step": "text", "text": "!"}]},
-            {"step": "repeat", "max": 2, "steps": [{"step": "text", "text": "+"}]},
-            {"step": "not", "class": [{"named": "letter"}]}
-        ]}]"#;
 
     #[test]
     fn every_step_can_be_described() {
