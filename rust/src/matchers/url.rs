@@ -45,6 +45,38 @@ fn is_url_symbol(c: char) -> bool {
     )
 }
 
+/// What follows the prefix of an address, from the cursor on: the run of
+/// URL characters, without the sentence punctuation at its end and without
+/// a closing bracket there that no bracket in the run opens. False when
+/// nothing is left of it.
+pub(crate) fn rest_of_address(cur: &mut Cursor<'_>) -> bool {
+    let after_prefix = cur.pos();
+    cur.advance_while2(is_letter_or_digit, is_url_symbol);
+    // How many closing brackets of each kind the run holds beyond its
+    // opening ones. That many, at most, are dropped from its end.
+    let run = cur.since(after_prefix);
+    let mut unopened = [(')', '('), (']', '[')].map(|(close, open)| {
+        (
+            close,
+            run.matches(close)
+                .count()
+                .saturating_sub(run.matches(open).count()),
+        )
+    });
+    loop {
+        cur.back_while(is_sentence_punctuation);
+        let Some(slot) = unopened
+            .iter_mut()
+            .find(|(close, n)| *n > 0 && cur.prev() == Some(*close))
+        else {
+            break;
+        };
+        slot.1 -= 1;
+        cur.back();
+    }
+    cur.pos() > after_prefix
+}
+
 impl Matcher for LikeUrl {
     fn kind(&self) -> &'static str {
         LIKE_URL
@@ -59,34 +91,7 @@ impl Matcher for LikeUrl {
     }
 
     fn matches(&self, cur: &mut Cursor<'_>) -> bool {
-        if !PREFIXES.iter().any(|prefix| cur.advance_str(prefix)) {
-            return false;
-        }
-        let after_prefix = cur.pos();
-        cur.advance_while2(is_letter_or_digit, is_url_symbol);
-        // How many closing brackets of each kind the run holds beyond its
-        // opening ones. That many, at most, are dropped from its end.
-        let run = cur.since(after_prefix);
-        let mut unopened = [(')', '('), (']', '[')].map(|(close, open)| {
-            (
-                close,
-                run.matches(close)
-                    .count()
-                    .saturating_sub(run.matches(open).count()),
-            )
-        });
-        loop {
-            cur.back_while(is_sentence_punctuation);
-            let Some(slot) = unopened
-                .iter_mut()
-                .find(|(close, n)| *n > 0 && cur.prev() == Some(*close))
-            else {
-                break;
-            };
-            slot.1 -= 1;
-            cur.back();
-        }
-        cur.pos() > after_prefix
+        PREFIXES.iter().any(|prefix| cur.advance_str(prefix)) && rest_of_address(cur)
     }
 }
 

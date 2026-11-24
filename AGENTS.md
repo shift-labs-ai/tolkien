@@ -49,7 +49,9 @@ bun test                    # the Node package, and the wasm package against it
 - `rust/src/pattern.rs`: `Pattern`, a matcher built from a list of `Step`s over
   `Class`es of characters: matchers as data, for users and for bindings
 - `rust/src/catalog.rs`: the catalog, matchers that are offered and not in
-  the default lexer; each is an `Entry` with its examples
+  the default lexer; each is an `Entry` with its examples and its source
+- `docs/catalog.md`: where each form of the catalog is taken from, and what
+  could not be found
 - `rust/src/trie.rs`: `Trie`, longest-word lookup for month and currency names
 - `rust/src/chars.rs`: character class functions over the generated tables
 - `rust/src/unicode_tables.rs`: generated, never edited
@@ -78,8 +80,10 @@ bun test                    # the Node package, and the wasm package against it
 - `.github/workflows/release.yml`: builds every addon and the wasm package
   from a `v*` tag and publishes them
 - `tools/verify.sh`: every check, for CI and for a person
-- `rust/examples/fuzz.rs`: the fuzzer; its `shape` function states every kind's
-  rules a second time, independently of the matchers
+- `rust/examples/fuzz.rs`: the fuzzer, over the default lexer, the whole
+  catalog and each group of it; its `shape` function states every built-in
+  kind's rules a second time, independently of the matchers, and its long
+  runs are built from the examples of the catalog
 - `tools/corpora.py`, `tools/evaluate.py`: fetch the benchmark corpora and
   score the tokens against their labels; `docs/benchmarks.md` has the results
 - `tools/downloads.py`: downloading and hash pinning, for the two scripts
@@ -106,8 +110,10 @@ bun test                    # the Node package, and the wasm package against it
   feature, which links anywhere and so has tests; `bindings.rs` and
   `wasm.rs` only hand it to napi and to wasm-bindgen.
 - **A step has three homes**: `Step` in `pattern.rs`, `StepSpec` in
-  `describe.rs` and a builder in `src/describe.ts`. Add to all three, and
-  to `every_step_can_be_described`.
+  `describe.rs` and a builder in `src/describe.ts`. Add to all three, to
+  `every_step_can_be_described` and to `every step has a builder the
+  engine takes` in `src/index.test.ts`, which compares the steps the
+  builders give with the list the engine gives.
 - **No regular expressions.** A matcher reads characters from the cursor.
 - **Matcher contract.** `matches` returns `true` with the cursor just past
   the token, or `false` with the cursor anywhere. The lexer gives each
@@ -168,8 +174,8 @@ bun test                    # the Node package, and the wasm package against it
   and `shortcuts.rs` for the default lexer. The last two restate what the
   matchers do. `can_start` decides where a matcher is asked, so it must be
   true for the first character of every token the matcher is to find, and
-  a shortcut must answer what the matchers, asked in order, would. Both are compared with asking every matcher at every
-  position: `shortcuts_and_hints_change_no_token` and the random-text test
+  a shortcut must answer what the matchers, asked in order, would. Both
+  are compared with asking every matcher at every position: `shortcuts_and_hints_change_no_token` and the random-text test
   in `rust/tests/lexer.rs`, and the fuzzer's `reference` check. **A new matcher,
   or a matcher that takes a new first character or a new kind of text, has
   to be checked against every rule in `shortcuts.rs`**; each rule names the
@@ -189,23 +195,31 @@ bun test                    # the Node package, and the wasm package against it
 A built-in matcher is for what any text holds, and changes what every
 user gets. Anything else goes in the catalog.
 
-1. Add its kind constant and an `Entry` to `ENTRIES` in
+1. Read the standard or the vendor's page for the form, and write in the
+   entry's `source` what it is and where the matcher departs from it. A
+   form written from memory is wrong in ways that pass every test: the
+   first version had the wrong alphabet for two kinds and missed forms of
+   nine.
+2. Add its kind constant and an `Entry` to `ENTRIES` in
    `rust/src/catalog.rs`, as a `Pattern` where the steps can say it and as
    a `Matcher` written by hand where they cannot. Place it before any
    entry that could take the same text.
-2. Give the entry texts it matches and texts it must refuse. The refused
-   ones are the point: the nearest things that are not one.
-3. Bound what it reads: a `repeat` with its number of rounds, a `trim_end`
+3. Give the entry texts it matches and texts it must refuse. The refused
+   ones are the point: the nearest things that are not one. The fuzzer
+   takes its pieces and its long runs from these texts.
+4. Bound what it reads: a `repeat` with its number of rounds, a `trim_end`
    that cannot give back everything a run took. Add its worst run to
    `long_runs_are_lexed_in_linear_time_with_the_whole_catalog`.
-4. If a built-in matcher takes a longer token that starts the same way, as
+5. If a built-in matcher takes a longer token that starts the same way, as
    a date does for an ordinal, refuse that case and add it to
    `the_catalog_leaves_dates_times_and_amounts_alone`.
-5. Add its row to the catalog table of the README; `the_readme_lists_the_catalog`
-   prints the table it expects.
-6. Look at what it finds in real text before trusting it:
+6. Add its row to the catalog table of the README and to the table of
+   `docs/catalog.md`; `the_readme_lists_the_catalog` and
+   `the_docs_give_the_source_of_every_matcher` print the tables they
+   expect.
+7. Look at what it finds in real text before trusting it:
    `python3 tools/evaluate.py --catalog`, and the tokens of its kind in
-   `corpus/docs/*.txt`. Every matcher of the first version was tightened
+   `corpus/docs/*.txt`. Ten matchers of the first version were tightened
    after that look.
 
 ## Adding a matcher

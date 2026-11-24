@@ -1,7 +1,7 @@
 //! The plain way to lex, for comparing the lexer with.
 //!
-//! `tests/lexer.rs` and `examples/fuzz.rs` both include this file, so that
-//! they hold the lexer to the same answer.
+//! The tests and `examples/fuzz.rs` include this file, so that they hold
+//! the lexer to the same answer.
 
 use tolkien::{Matcher, OTHER};
 

@@ -1,11 +1,20 @@
-//! Checks the default lexer on real documents and on mutations of them.
+//! Checks the lexer on real documents and on mutations of them.
 //!
 //!     cargo run --release --example fuzz -- [--seconds N] [--seed N] FILE...
 //!
 //! Each FILE holds documents separated by NUL characters, as
-//! `tools/corpora.py` writes them. Every document is checked as it is, and
-//! then, for `--seconds` (default 30), documents are picked at random, cut to
-//! a window, mutated and checked again.
+//! `tools/corpora.py` writes them. Every document is checked as it is.
+//! Then the start of every piece the mutations use is repeated into a long
+//! run, which is timed. Then, for `--seconds` (default 30), documents are
+//! picked at random, cut to a window, mutated and checked again.
+//!
+//! Three lexers are checked: the default one and the default one with the
+//! whole catalog added, on every text, and the default one with one group
+//! of the catalog on every mutated text, a different group from text to
+//! text. Between them they run
+//! every built-in matcher, every matcher of the catalog, patterns and
+//! matchers written by hand, and a lexer whose shortcuts are in use for
+//! some first characters and not for others.
 //!
 //! A check is a property that must hold for any text:
 //!
@@ -17,9 +26,10 @@
 //! - `kind`: no `OTHER`, `LETTER` or `DIGIT` token appears.
 //! - `parallel`: lexed in pieces on several threads, the text gives the
 //!   same tokens. One text in sixteen is checked: threads are slow to start.
-//! - `shape`: a token has the form its kind documents. The rules are written
-//!   here a second time, on purpose, so that they do not share a bug with
-//!   the matchers.
+//! - `shape`: a token of a built-in kind has the form its kind documents.
+//!   The rules are written here a second time, on purpose, so that they do
+//!   not share a bug with the matchers. The kinds of the catalog are not
+//!   written twice: the examples of their entries say what they are.
 //! - `alone`: a token's text, given to its own matcher with nothing after
 //!   it, is that whole token.
 //! - `no-left-context`: lexing from the start of a token gives that token
@@ -34,6 +44,7 @@ use std::collections::BTreeMap;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use tolkien::catalog::{self, Group};
 use tolkien::chars::*;
 use tolkien::matchers::*;
 use tolkien::{Lexer, Matcher, Token, OTHER};
@@ -48,17 +59,31 @@ struct Finding {
     detail: String,
 }
 
+/// A lexer, and the matchers it has to agree with.
 struct Checker {
+    /// What the lexer is, for a report.
+    name: &'static str,
     lexer: Lexer,
+    /// The lexer's matchers in the order they are tried.
     matchers: Vec<Box<dyn Matcher>>,
 }
 
 impl Checker {
-    fn new() -> Self {
+    /// The default lexer with the matchers `added` gives tried first.
+    /// `added` is called twice: a matcher cannot be copied.
+    fn new(name: &'static str, added: impl Fn() -> Vec<Box<dyn Matcher>>) -> Self {
+        let mut matchers = added();
+        matchers.extend(all());
         Self {
-            lexer: Lexer::default(),
-            matchers: all(),
+            name,
+            lexer: Lexer::with(added()).expect("the matchers form a lexer"),
+            matchers,
         }
+    }
+
+    /// True when a matcher of the catalog produces `kind`.
+    fn is_of_the_catalog(kind: &str) -> bool {
+        catalog::entries().iter().any(|entry| entry.kind == kind)
     }
 
     /// The first broken check of `text`, if there is one. `rng` picks the
@@ -145,19 +170,21 @@ impl Checker {
                     detail,
                 });
             }
-            if let Err(why) = shape(token, &text[token.end..]) {
-                let detail = format!("{:?}: {why}", token.text);
-                return Some(Finding {
-                    check: "shape",
-                    kind: token.kind,
-                    detail,
-                });
+            if !Self::is_of_the_catalog(token.kind) {
+                if let Err(why) = shape(token, &text[token.end..]) {
+                    let detail = format!("{:?}: {why}", token.text);
+                    return Some(Finding {
+                        check: "shape",
+                        kind: token.kind,
+                        detail,
+                    });
+                }
             }
             let matcher = self
                 .matchers
                 .iter()
                 .find(|m| m.kind() == token.kind)
-                .expect("shape rejects a kind that no built-in matcher produces");
+                .expect("a token has the kind of one of the lexer's matchers");
             if matcher.match_prefix(token.text) != Some(token.text) {
                 let detail = format!(
                     "{:?} gives {:?}",
@@ -190,24 +217,32 @@ impl Checker {
             }
         }
 
+        self.too_slow(text, elapsed)
+    }
+
+    /// The `time` check: a finding when lexing `text` took `elapsed` and
+    /// that is more than its length allows.
+    fn too_slow(&self, text: &str, elapsed: Duration) -> Option<Finding> {
         // A release build lexes its slowest input at well over 10 MB/s, which
         // is 0.1 microseconds a byte. Twenty times that, and a floor for noise.
         let budget = Duration::from_millis(20) + Duration::from_nanos(2_000) * text.len() as u32;
-        if elapsed > budget {
-            // Measure again before blaming the lexer for a busy machine.
-            let started = Instant::now();
-            let count = self.lexer.tokens(text).count();
-            let again = started.elapsed();
-            if again > budget {
-                let detail = format!("{} bytes, {count} tokens, {again:?}", text.len());
-                return Some(Finding {
-                    check: "time",
-                    kind: "",
-                    detail,
-                });
-            }
+        if elapsed <= budget {
+            return None;
         }
-        None
+        // Measure again before blaming the lexer for a busy machine.
+        let (count, again) = self.timed(text);
+        (again > budget).then(|| Finding {
+            check: "time",
+            kind: "",
+            detail: format!("{} bytes, {count} tokens, {again:?}", text.len()),
+        })
+    }
+
+    /// How many tokens `text` has, and how long lexing it took.
+    fn timed(&self, text: &str) -> (usize, Duration) {
+        let started = Instant::now();
+        let count = self.lexer.tokens(text).count();
+        (count, started.elapsed())
     }
 }
 
@@ -597,7 +632,7 @@ impl Rng {
     }
 }
 
-/// Pieces that start, end or break a token of some kind.
+/// Pieces that start, end or break a token of a built-in kind.
 #[rustfmt::skip]
 const DICTIONARY: &[&str] = &[
     "@", "#", "$", "€", "£", "₪", "%", "+", "-", "--", "_", ".", "..", ",", ":", ";", "/", "\\",
@@ -612,6 +647,36 @@ const DICTIONARY: &[&str] = &[
     "10:30:15 PM", "$5", "5 USD", "#tag", "@name", "1,000.50", "-.5", "6.0.1", "100%", "—", "–",
     "‐", "−", "。", "،", "？", "！", "＠", "＃", "＿", "．", "１２３", "：",
 ];
+
+/// The pieces a mutation puts into a text: [`DICTIONARY`], and for the
+/// catalog the texts its entries match and refuse, which are the nearest
+/// things to a token of each kind.
+fn pieces() -> Vec<&'static str> {
+    let entries = catalog::entries().iter();
+    let examples = entries.flat_map(|entry| {
+        let matched = entry.matches.iter().map(|&(text, _)| text);
+        matched.chain(entry.rejects.iter().copied())
+    });
+    DICTIONARY.iter().copied().chain(examples).collect()
+}
+
+/// The units of the long runs: the first characters of every piece, and
+/// the same with a space after them. A matcher that reads without a bound
+/// reads a run of such a unit whole, fails, and reads it again from the
+/// next token, and the run is one a random mutation seldom builds.
+fn run_units(pieces: &[&str]) -> Vec<String> {
+    /// A unit longer than this starts no run a shorter one does not.
+    const LONGEST: usize = 5;
+    let mut units = std::collections::BTreeSet::new();
+    for piece in pieces {
+        for (end, c) in piece.char_indices().take(LONGEST) {
+            let start = &piece[..end + c.len_utf8()];
+            units.insert(start.to_string());
+            units.insert(format!("{start} "));
+        }
+    }
+    units.into_iter().collect()
+}
 
 /// The longest window of a document that is mutated. Short texts run more
 /// mutations a second, and a failure in a short text is easier to read.
@@ -653,16 +718,16 @@ fn range(text: &str, rng: &mut Rng, max: usize) -> (usize, usize) {
 }
 
 /// `text` after between one and four random edits. `other` is a second
-/// document to take pieces from.
-fn mutate(text: &str, other: &str, rng: &mut Rng) -> String {
+/// document to take ranges from, and `pieces` what to put in.
+fn mutate(text: &str, other: &str, pieces: &[&str], rng: &mut Rng) -> String {
     let mut out = text.to_string();
     for _ in 0..1 + rng.below(4) {
         let (start, end) = range(&out, rng, 24);
         match rng.below(9) {
             // Insert a piece that means something to a matcher.
-            0..=2 => out.insert_str(start, rng.pick(DICTIONARY)),
+            0..=2 => out.insert_str(start, rng.pick(pieces)),
             // Replace a range with such a piece.
-            3 => out.replace_range(start..end, rng.pick(DICTIONARY)),
+            3 => out.replace_range(start..end, rng.pick(pieces)),
             // Delete a range.
             4 => out.replace_range(start..end, ""),
             // Repeat a range, a few times or many: long runs are where
@@ -674,7 +739,7 @@ fn mutate(text: &str, other: &str, rng: &mut Rng) -> String {
                     2 + rng.below(6)
                 };
                 let piece = if start == end {
-                    rng.pick(DICTIONARY).to_string()
+                    rng.pick(pieces).to_string()
                 } else {
                     out[start..end].to_string()
                 };
@@ -736,13 +801,21 @@ fn minimise(checker: &Checker, text: &str, finding: &Finding) -> String {
 }
 
 struct Report {
-    /// The first text that broke each check on each kind, cut down.
-    findings: BTreeMap<(&'static str, &'static str), (String, String, usize)>,
+    /// The first text that broke each check on each kind in each lexer,
+    /// cut down.
+    findings: BTreeMap<(&'static str, &'static str, &'static str), (String, String, usize)>,
 }
 
 impl Report {
+    /// Checks `text` with `checker` and records what it finds.
+    fn check(&mut self, checker: &Checker, text: &str, rng: &mut Rng) {
+        if let Some(finding) = checker.check(text, rng) {
+            self.record(checker, text, finding);
+        }
+    }
+
     fn record(&mut self, checker: &Checker, text: &str, finding: Finding) {
-        let key = (finding.check, finding.kind);
+        let key = (checker.name, finding.check, finding.kind);
         if let Some(entry) = self.findings.get_mut(&key) {
             entry.2 += 1;
             return;
@@ -758,8 +831,8 @@ impl Report {
             .check(&small, &mut rng)
             .map_or(finding.detail, |f| f.detail);
         eprintln!(
-            "FAIL {} {}: {detail}\n     text: {small:?}",
-            finding.check, finding.kind
+            "FAIL {} {} with {}: {detail}\n     text: {small:?}",
+            finding.check, finding.kind, checker.name
         );
         self.findings.insert(key, (small, detail, 1));
     }
@@ -808,7 +881,18 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let checker = Checker::new();
+    let default = Checker::new("the default lexer", Vec::new);
+    let whole_catalog = Checker::new("the whole catalog", catalog::all);
+    let groups = [
+        Checker::new("the network group", || catalog::group(Group::Network)),
+        Checker::new("the secrets group", || catalog::group(Group::Secrets)),
+        Checker::new("the finance group", || catalog::group(Group::Finance)),
+        Checker::new("the personal group", || catalog::group(Group::Personal)),
+        Checker::new("the technical group", || catalog::group(Group::Technical)),
+        Checker::new("the text group", || catalog::group(Group::Text)),
+    ];
+    assert_eq!(groups.len(), Group::ALL.len(), "a group is not checked");
+    let pieces = pieces();
     let mut rng = Rng(seed);
     let mut report = Report {
         findings: BTreeMap::new(),
@@ -818,14 +902,32 @@ fn main() -> ExitCode {
     let mut bytes = 0;
     for doc in &docs {
         bytes += doc.len();
-        if let Some(finding) = checker.check(doc, &mut rng) {
-            report.record(&checker, doc, finding);
-        }
+        report.check(&default, doc, &mut rng);
+        report.check(&whole_catalog, doc, &mut rng);
     }
     println!(
         "documents: {} checked, {:.1} MB, {:.1} s",
         docs.len(),
         bytes as f64 / 1e6,
+        started.elapsed().as_secs_f64()
+    );
+
+    // Long enough for a quadratic run to take many times its budget.
+    const RUN: usize = 40_000;
+    let started = Instant::now();
+    let units = run_units(&pieces);
+    for unit in &units {
+        let text = unit.repeat(RUN / unit.len());
+        for checker in [&default, &whole_catalog] {
+            let (_, elapsed) = checker.timed(&text);
+            if let Some(finding) = checker.too_slow(&text, elapsed) {
+                report.record(checker, &text, finding);
+            }
+        }
+    }
+    println!(
+        "long runs: {} checked, {:.1} s",
+        units.len(),
         started.elapsed().as_secs_f64()
     );
 
@@ -835,11 +937,12 @@ fn main() -> ExitCode {
         for _ in 0..256 {
             let doc = window(docs[rng.below(docs.len())], &mut rng);
             let other = window(docs[rng.below(docs.len())], &mut rng);
-            let text = mutate(doc, other, &mut rng);
+            let text = mutate(doc, other, &pieces, &mut rng);
             mutations += 1;
-            if let Some(finding) = checker.check(&text, &mut rng) {
-                report.record(&checker, &text, finding);
-            }
+            report.check(&default, &text, &mut rng);
+            report.check(&whole_catalog, &text, &mut rng);
+            let group = &groups[rng.below(groups.len())];
+            report.check(group, &text, &mut rng);
         }
     }
     println!("mutations: {mutations} checked, {seconds} s, seed {seed}");
@@ -849,8 +952,8 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     println!("\n{} checks failed:", report.findings.len());
-    for ((check, kind), (text, detail, times)) in &report.findings {
-        println!("- {check} {kind} ({times} times): {detail}\n  {text:?}");
+    for ((lexer, check, kind), (text, detail, times)) in &report.findings {
+        println!("- {check} {kind} with {lexer} ({times} times): {detail}\n  {text:?}");
     }
     ExitCode::FAILURE
 }

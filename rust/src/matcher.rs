@@ -35,7 +35,7 @@ pub trait Matcher: Send + Sync {
     fn kind(&self) -> &'static str;
 
     /// Kinds this matcher takes precedence over. The lexer tries this matcher
-    /// before each of them, wherever they were registered.
+    /// before each of them, wherever it was given.
     fn overrides(&self) -> &'static [&'static str] {
         &[]
     }

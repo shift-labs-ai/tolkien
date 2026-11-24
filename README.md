@@ -35,9 +35,9 @@ for [Node and for browsers](#from-javascript).
 
 ## How it works
 
-- **Matchers.** Each kind of token has a matcher: a small hand-written
-  recogniser that reads characters from a cursor. There are no regular
-  expressions.
+- **Matchers.** Each kind of token has a matcher: a small recogniser that
+  reads characters from a cursor, written by hand or described as a
+  pattern. There are no regular expressions.
 - **First match wins.** At each position the lexer tries its matchers in
   order, takes the first that matches, and continues after that token.
 - **Order.** Matchers are tried in the order they are given. A matcher may
@@ -141,35 +141,35 @@ On the command line, `tolkien --catalog` adds them all.
 |---|---|---|---|
 | `CIDR` | network | An IPv4 address, a slash and a prefix length up to 32 | `10.0.0.0/8` |
 | `IPV4` | network | Four numbers from 0 to 255 joined by full stops | `192.168.1.20` |
-| `IPV6` | network | Eight groups of hex digits joined by colons, or fewer around one `::` | `cc87:f687:8bdb:8a6c:ffac:0910:1bde:3a63` |
-| `MAC_ADDRESS` | network | Six pairs of hex digits joined by the same colon or dash | `1d:d8:97:09:54:39` |
-| `URI` | network | A scheme other than `http` and what follows: `ssh://`, `ftp://`, `s3://`, `mailto:`, `tel:` and others | `ssh://git@host.example/repo.git` |
-| `AWS_ACCESS_KEY_ID` | secrets | `AKIA` or `ASIA` and sixteen capital letters or digits | `AKIAIOSFODNN7EXAMPLE` |
-| `GITHUB_TOKEN` | secrets | `ghp_`, `gho_`, `ghu_`, `ghs_` or `ghr_` and 36 or more letters and digits, or `github_pat_` and more | `ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ` |
-| `SLACK_TOKEN` | secrets | `xoxb-`, `xoxp-`, `xoxa-`, `xoxr-` or `xoxs-` and ten or more letters, digits and dashes | `xoxb-123456789012-abcdefABCDEF` |
+| `IPV6` | network | Eight groups of hex digits joined by colons, or fewer around one `::`; the last two may be an IPv4 address | `cc87:f687:8bdb:8a6c:ffac:0910:1bde:3a63` |
+| `MAC_ADDRESS` | network | Six pairs of hex digits joined by the same colon or dash, or three groups of four joined by full stops with a letter among them | `1d:d8:97:09:54:39` |
+| `URI` | network | A scheme other than `http` and what follows: `ssh://`, `ftp://`, `s3://`, `postgres://`, `mailto:`, `tel:` and others; it ends as a `LIKE_URL` does | `ssh://git@host.example/repo.git` |
+| `AWS_ACCESS_KEY_ID` | secrets | `AKIA` or `ASIA` and sixteen characters of base32: capital letters and the digits 2 to 7 | `AKIAIOSFODNN7EXAMPLE` |
+| `GITHUB_TOKEN` | secrets | `ghp_`, `gho_`, `ghu_`, `ghs_` or `ghr_` and 36 or more letters and digits, or `github_pat_` and 82 or more with underscores | `ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ` |
+| `SLACK_TOKEN` | secrets | `xoxb-`, `xoxp-`, `xapp-`, `xwfp-`, an older `xox` prefix or a rotating `xoxe` one, and ten or more letters, digits and dashes | `xoxb-123456789012-abcdefABCDEF` |
 | `STRIPE_KEY` | secrets | `sk_`, `pk_` or `rk_`, then `live_` or `test_`, and sixteen or more letters and digits | `sk_live_abcdefghijklmnop1234` |
 | `GOOGLE_API_KEY` | secrets | `AIza` and 35 letters, digits, dashes and underscores | `AIzaSyA-abcdefghijklmnopqrstuvwxyz01234` |
 | `NPM_TOKEN` | secrets | `npm_` and 36 letters and digits | `npm_abcdefghijklmnopqrstuvwxyz0123456789` |
-| `JWT` | secrets | Three runs of base64url letters joined by full stops, the first two starting with `eyJ` | `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl-_x` |
-| `PEM_HEADER` | secrets | `-----BEGIN`, a name in capitals, `-----` | `-----BEGIN PRIVATE KEY-----` |
+| `JWT` | secrets | Three parts of base64url letters joined by full stops, the first two starting with `eyJ`; the third, the signature, may be empty | `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl-_x` |
+| `PEM_HEADER` | secrets | `-----BEGIN`, a label of up to eight words in capitals and digits with one space between them, `-----` | `-----BEGIN PRIVATE KEY-----` |
 | `ETHEREUM_ADDRESS` | finance | `0x` and forty hex digits | `0xe1dcd20433acf4060193a3df869fc93a5d656d7f` |
 | `CARD_NUMBER` | finance | 13 to 19 digits, in up to five groups joined by single spaces or dashes, the first of four digits or more | `4111111111111111` |
 | `IBAN` | finance | Two capital letters, two digits, and 11 to 30 capital letters and digits, together or in groups of up to four | `GB29NWBK60161331926819` |
-| `BITCOIN_ADDRESS` | finance | `1` or `3` and 25 to 34 base58 letters, or `bc1` and 11 to 71 lower-case letters and digits | `1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa` |
-| `CASHTAG` | finance | `$` and one to five capital letters | `$AAPL` |
-| `IMEI` | personal | Fifteen digits in groups of 2, 6, 6 and 1 joined by dashes | `39-650908-828872-7` |
-| `US_SSN` | personal | Digits in groups of 3, 2 and 4 joined by the same dash or space | `543-21-6046` |
-| `COORDINATES` | personal | A latitude and a longitude with a comma between them: in square brackets, or with four or more decimals each | `[39.6601,-36.8189]` |
+| `BITCOIN_ADDRESS` | finance | `1` or `3` and 25 to 34 base58 characters, or `bc1` and 11 to 71 characters of the bech32 alphabet, in one case | `1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa` |
+| `CASHTAG` | finance | `$` and one to six capital letters, then a full stop or an underscore and one or two more, or not | `$AAPL` |
+| `IMEI` | personal | Digits in groups of 2, 6, 6 and 1 joined by dashes, or with a last group of 2 for the number with a software version | `39-650908-828872-7` |
+| `US_SSN` | personal | Digits in groups of 3, 2 and 4 joined by the same dash or space, without the numbers that are never assigned: a first group of 000, 666 or 900 to 999, a group of zeros | `543-21-6046` |
+| `COORDINATES` | personal | A latitude up to 90 and a longitude up to 180 in decimal degrees with a comma between them: in square brackets, or with four or more decimals each | `[39.6601,-36.8189]` |
 | `PHONE_NUMBER` | personal | 7 to 15 digits after a `+`, after an area code in brackets, or in groups joined by dashes or full stops | `+1 (555) 010-9999` |
 | `UUID` | technical | Hex digits in groups of 8, 4, 4, 4 and 12 joined by dashes | `123e4567-e89b-12d3-a456-426614174000` |
 | `HASH` | technical | 32, 40, 56, 64, 96 or 128 hex digits: an MD5, SHA-1 or SHA-2 digest | `d41d8cd98f00b204e9800998ecf8427e` |
 | `HEX_NUMBER` | technical | `0x` and hex digits | `0xFF` |
 | `VERSION` | technical | `v`, numbers joined by full stops, and a pre-release or build after a dash or a plus | `v1.2.3` |
 | `SCIENTIFIC_NUMBER` | technical | A number, `e` or `E`, and an exponent | `6.02e23` |
-| `HEX_COLOR` | technical | `#` and 6 or 8 hex digits, or 3 or 4 with a letter among them. A hashtag of those letters is one too: `#decade` | `#fff` |
-| `FILE_PATH` | technical | A path that starts with `~/`, `./` or `../` | `~/Projects/tolkien/README.md` |
-| `WINDOWS_PATH` | technical | A drive letter, `:\` and a path | `C:\Users\dana\notes.txt` |
-| `UTC_OFFSET` | technical | `UTC` or `GMT`, a sign, hours up to 14 and minutes or not | `UTC+2` |
+| `HEX_COLOR` | technical | `#` and 3, 4, 6 or 8 hex digits; without a letter among them, 6 only. A hashtag of those letters is one too: `#decade` | `#fff` |
+| `FILE_PATH` | technical | A path that starts with `~/` or `../`, or with `./` and holds a second slash or a full stop | `~/Projects/tolkien/README.md` |
+| `WINDOWS_PATH` | technical | A drive letter, `:\` and a path of names without spaces | `C:\Users\dana\notes.txt` |
+| `UTC_OFFSET` | technical | `UTC` or `GMT`, then `+` and hours up to 14 or `-` and hours up to 12, and `:00`, `:30` or `:45` or not | `UTC+2` |
 | `ISBN` | technical | The number of a book: 13 digits that start with `978` or `979`, together or in five groups, or 10 in four groups, of which the last may be an `X` | `978-3-931911-18-8` |
 | `ORDINAL` | text | Digits and `st`, `nd`, `rd` or `th`, unless a month name follows | `1st` |
 | `FRACTION` | text | Two numbers of up to three digits, neither starting with a zero, with a slash between them | `3/4` |
@@ -190,6 +190,9 @@ What to know:
 - **A few shapes are shared.** `#decade` is a `HEX_COLOR`, `$HOME` a
   `CASHTAG`, `2E18` a `SCIENTIFIC_NUMBER`, and a date without a year such
   as `1/20` a `FRACTION`. Take the kinds you need.
+- **A form is what its source says, and no more.** Where a vendor
+  publishes no length, none is exact here, and a vendor may change a
+  format without notice.
 - **Dates, times and amounts stay with the built-in matchers**: `17th Feb
   2009` is a `DATE` and not an `ORDINAL`.
 - **Each costs where it can start.** A matcher that starts with a text
@@ -198,6 +201,8 @@ What to know:
   all thirty-eight the texts of the [speed table](#speed) lex at 95 to
   160 MB/s on one thread, and 265 to 640 MB/s on every core.
 
+[docs/catalog.md](docs/catalog.md) gives the standard or the vendor page
+each form is taken from, and where a matcher departs from it.
 [docs/benchmarks.md](docs/benchmarks.md) has what they find in labelled
 text.
 
@@ -217,10 +222,15 @@ cargo build --release && python3 ../tools/evaluate.py             # labelled spa
   random, and checks properties that must hold for any text: the tokens
   cover it, they are the tokens of asking every matcher at every position,
   they are the same when the text is lexed in pieces on several threads,
-  every token has the form its kind documents, a token on its own is the
-  same token, a token does not depend on what stands before it, and the
-  time is in proportion to the length. A failing text is cut down and
-  printed.
+  every token of a built-in kind has the form its kind documents, a token
+  on its own is the same token, a token does not depend on what stands
+  before it, and the time is in proportion to the length. It checks three
+  lexers: the default one and the default one with the whole catalog on
+  every text, and the default one with one group of it on every mutated
+  text. The start of every
+  example of the catalog is also repeated into a long run and timed, which
+  is where a matcher that reads without a bound shows. A failing text is
+  cut down and printed.
 - **`tools/evaluate.py`** compares the tokens with the spans people labelled
   in two datasets: is an email address, a date or a card number one token,
   and of the expected kind? `docs/benchmarks.md` holds the results.

@@ -15,9 +15,9 @@
 //!
 //! The design has three parts:
 //!
-//! - A [`Matcher`] recognises one kind of token. Each is a small hand-written
-//!   recogniser that reads characters from a [`Cursor`]. There are no regular
-//!   expressions.
+//! - A [`Matcher`] recognises one kind of token. Each is a small recogniser
+//!   that reads characters from a [`Cursor`], written by hand or described
+//!   as a [`pattern::Pattern`]. There are no regular expressions.
 //! - A [`Lexer`] holds an ordered list of matchers. At each position it takes
 //!   the first one that matches. The order is the order they are given in,
 //!   and a matcher that [overrides](Matcher::overrides) another moves up to

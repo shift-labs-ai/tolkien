@@ -1,15 +1,45 @@
 import { describe, expect, test } from "bun:test";
 import { matchers, texts } from "../test/fixtures.js";
 import {
+  between,
   catalog,
+  chars,
+  dash,
+  digit,
+  either,
+  exactly,
+  fullStop,
   Lexer,
+  letter,
   matcher,
   not,
+  notBefore,
+  number,
   one,
+  optional,
+  range,
+  repeat,
   run,
+  type Step,
+  sameSeparator,
+  separator,
   type Token,
   text,
+  trimEnd,
+  words,
 } from "./index.js";
+
+/** The steps the engine knows: it lists them when it refuses one. */
+function stepsOfTheEngine(): string[] {
+  const unknown = { step: "jump" } as unknown as Step;
+  try {
+    new Lexer([matcher("A", [unknown])]);
+  } catch (error) {
+    const [, known = ""] = String(error).split("expected one of");
+    return [...known.matchAll(/`(\w+)`/g)].map(([, step]) => step).sort();
+  }
+  return [];
+}
 
 const kindsAndTexts = (tokens: Iterable<Token>) =>
   [...tokens]
@@ -166,6 +196,42 @@ describe("Lexer", () => {
       ["LOCALHOST", "127.0.0.1"],
       ["IPV4", "8.8.8.8"],
     ]);
+  });
+
+  // The builders give every step the engine knows, and no other: this
+  // fails when a step is added to one side only.
+  test("every step has a builder the engine takes", () => {
+    const everything = matcher(
+      "EVERYTHING",
+      [
+        text("id:"),
+        words(["a", "b"], { commonCases: true }),
+        number(3, 255),
+        separator(chars(":-")),
+        exactly(2, letter),
+        sameSeparator(),
+        optional([text("?")]),
+        either([[text("x")], []]),
+        repeat(2, [one(dash), run(range("0", "9"))]),
+        between(0, 9, fullStop),
+        trimEnd(fullStop),
+        notBefore([text("!")]),
+        not([letter, digit]),
+      ],
+      { count: { of: [letter, digit], min: 1, max: 40 } },
+    );
+    expect(stepsOfTheEngine().length).toBeGreaterThan(10);
+    expect(
+      [...new Set(everything.steps.map((step) => step.step))].sort(),
+    ).toEqual(stepsOfTheEngine());
+    const lexer = new Lexer([everything]);
+    expect(lexer.tokens("id:A12-ab-x-7.. ").at(0)).toEqual({
+      kind: "EVERYTHING",
+      start: 0,
+      end: 13,
+      text: "id:A12-ab-x-7",
+    });
+    expect(lexer.tokens("id:A12-ab-x!").at(0)?.kind).toBe("WORD");
   });
 
   test("a wrong matcher is refused with a reason", () => {

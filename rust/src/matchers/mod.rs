@@ -32,7 +32,7 @@ pub use iso8601::{Iso8601, DATE_ISO_8601};
 pub use number::{LikeNumber, LIKE_NUMBER};
 pub use tags::{Hashtag, Mention, HASHTAG, MENTION};
 pub use time::{Time, TIME};
-pub(crate) use url::has_prefix as has_url_prefix;
+pub(crate) use url::{has_prefix as has_url_prefix, rest_of_address};
 pub use url::{LikeUrl, LIKE_URL};
 pub use word::{Word, WORD};
 

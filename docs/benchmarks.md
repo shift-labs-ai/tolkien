@@ -124,7 +124,7 @@ addresses and numbers that were several.
 | `ETHEREUMADDRESS` | 1,624 | 99.7% | 99.7% | |
 | `PHONENUMBER` | 2,425 | 37.9% | 91.3% | a space between groups with no leading zero or `+` |
 | `BITCOINADDRESS` | 2,403 | 99.5% | 66.0% | the dataset's addresses are up to 36 characters; a real one has at most 35 |
-| `SSN` | 2,045 | 75.7% | 48.6% | half are not of the United States form: `756.4511.8112`, eleven digits together |
+| `SSN` | 2,045 | 75.7% | 43.3% | half are not of the United States form (`756.4511.8112`, eleven digits together), and a tenth start with 9, 666 or 000, which are never assigned |
 
 The labels a built-in matcher covers are unchanged with the catalog:
 `DATE` 67.8%, `TIME` 66.0%, `EMAIL` and `URL` 99.8%.
@@ -132,8 +132,8 @@ The labels a built-in matcher covers are unchanged with the catalog:
 Labels say what a matcher finds, not what it finds by mistake. For that,
 the tokens of every kind of the catalog were read in the four corpora
 without labels (court cases, Wikipedia, converted documents, this
-repository). The first version was wrong in eight ways, each now a refused
-example of its entry:
+repository), and then in the text of the labelled ones. The first version
+was wrong in ten ways, each now a refused example of its entry:
 
 | What was found | Taken for | Now |
 |---|---|---|
@@ -145,9 +145,22 @@ example of its entry:
 | `:*` and `:\|` in markdown, `=(` in code, `:3` in a ratio | an emoticon | left out |
 | `./C.` in `W./C. 6608` | a file path | two characters of a name |
 | A column of numbers, `1 22 333 4444 55555` | a card number | the first group has four digits |
+| Account numbers, `#53901976` | a colour | eight digits need a letter |
+| `./Ms` in `Mr./Ms` | a file path | after `./`, a second slash or a full stop |
 
 What a shape cannot tell apart is still there: a 19-digit number is a
 `CARD_NUMBER`, `$HOME` a `CASHTAG`, `2E18` a `SCIENTIFIC_NUMBER`.
+
+The forms themselves were then checked against their sources, which
+[catalog.md](catalog.md) lists. That changed fifteen matchers. Two had the
+wrong alphabet (an AWS key ID is base32, a bech32 address leaves out four
+characters). Nine missed forms that exist: an IPv4 address at the end of
+an IPv6 one, a MAC address in three groups, seven Slack prefixes, an
+unsigned JWT, a PEM label with a digit, an IMEI with a software version, a
+cashtag of six letters or with a class after a full stop, a hyphen inside
+a SemVer identifier, and nine URI schemes. Four took forms that do not
+exist: a social security number that is never assigned, an offset of
+UTC-13, a latitude of 91, a fine-grained GitHub token of 22 characters.
 
 ## What the fuzzer found
 
@@ -166,6 +179,16 @@ the same when the text is lexed in pieces. Twenty wrong shortcut rules,
 planted one at a time, were each caught twice: by the texts of
 `shortcuts_and_hints_change_no_token`, and by the fuzzer within eight
 seconds.
+
+It now checks three lexers: the default one and the default one with the
+whole catalog on every text, and the default one with one group of the
+catalog on every mutated text.
+Five bugs were planted in what only those lexers run. It reported the
+three in the lexer within twelve seconds, and a card number with no bound
+on its groups by its time. It missed a telephone number with no bound: the
+run that shows it, `01 01 01`, is one a random mutation seldom builds. The
+fuzzer now builds such runs itself, from the first characters of every
+example of the catalog, and reports that one every time.
 
 It did not find the defects above, and could not have: every one of them
 was a rule doing what it said. They came from comparing the tokens with
