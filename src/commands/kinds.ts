@@ -18,12 +18,13 @@ export async function kinds(options: OutputOptions): Promise<void> {
       console.log();
       for (const kind of builtIn) console.log(`  ${kind}`);
       const groups = [...new Set(entries.map((entry) => entry.group))];
+      const width = Math.max(...entries.map((entry) => entry.kind.length));
       for (const group of groups) {
         console.log();
         console.log(bold(`Catalog: ${group}`), dim(`--group ${group}`));
         console.log();
         for (const entry of entries.filter((e) => e.group === group)) {
-          console.log(`  ${entry.kind.padEnd(18)} ${dim(entry.summary)}`);
+          console.log(`  ${entry.kind.padEnd(width)}  ${dim(entry.summary)}`);
         }
       }
       console.log();

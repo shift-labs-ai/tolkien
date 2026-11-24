@@ -16,7 +16,7 @@ python3 tools/evaluate.py                          # score tokens against labell
 
 cd rust                                            # the crate; cargo runs here
 cargo test                                         # unit, integration and doc tests
-cargo run -- "some text"                           # print tokens
+cargo run -- -t "some text"                        # print tokens
 cargo run --release --example throughput -- FILE   # measure speed
 cargo run --release --example fuzz -- ../corpus/docs/*.txt   # property checks on real and mutated text
 ```

@@ -1,3 +1,4 @@
-export const EXIT_SUCCESS = 0;
+/** Something the command could not do, such as read a file. */
 export const EXIT_ERROR = 1;
-export const EXIT_USER_ERROR = 2; // Invalid input, missing args
+/** A mistake in what the user asked for. */
+export const EXIT_USER_ERROR = 2;

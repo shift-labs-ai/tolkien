@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { catalog, Lexer, type Matcher } from "../index.js";
+import { catalog, Lexer, type Matcher, type Token } from "../index.js";
 import { EXIT_ERROR, EXIT_USER_ERROR } from "../utils/exit-codes.js";
 import type { OutputOptions } from "../utils/output.js";
 import { dim, error, jsonOutput, output, success } from "../utils/output.js";
@@ -19,22 +19,20 @@ export interface LexOptions extends OutputOptions {
   skipSpace?: boolean;
 }
 
-interface Row {
-  kind: string;
-  start: number;
-  end: number;
-  text: string;
-}
-
 const SPACE = new Set(["WHITE_SPACE", "LINE_TERMINATION"]);
 
-/** A user's mistake: say what it is and exit. */
-function refuse(options: OutputOptions, message: string): never {
+/** Says why the command cannot go on and exits with `status`. */
+function fail(options: OutputOptions, message: string, status: number): never {
   output(options, {
     json: () => ({ success: false, error: message }),
     human: () => error(message),
   });
-  process.exit(EXIT_USER_ERROR);
+  process.exit(status);
+}
+
+/** A mistake of the user's. */
+function refuse(options: OutputOptions, message: string): never {
+  fail(options, message, EXIT_USER_ERROR);
 }
 
 async function readStdin(): Promise<string> {
@@ -72,28 +70,44 @@ async function read(
     const message = missing
       ? `File not found: ${source}`
       : (err as Error).message;
-    output(options, {
-      json: () => ({ success: false, error: message }),
-      human: () => error(message),
-    });
-    process.exit(EXIT_ERROR);
+    fail(options, message, EXIT_ERROR);
   }
 }
 
 /** The matchers the options add to the built-in ones. */
 function added(options: LexOptions): Matcher[] {
-  if (options.catalog) return catalog.all();
-  if (options.groups.length === 0) return [];
   try {
-    return catalog.group(...options.groups);
+    // A group is checked also where the whole catalog is asked for.
+    const groups = catalog.group(...options.groups);
+    return options.catalog ? catalog.all() : groups;
   } catch (err) {
     refuse(options, `${(err as Error).message}. Run 'tolkien kinds'.`);
   }
 }
 
+/** Why `kind` is not one of the lexer's. */
+function unknownKind(kind: string): string {
+  const entry = catalog.entries().find((entry) => entry.kind === kind);
+  return entry
+    ? `${kind} is a kind of the catalog. Add -g ${entry.group}, or -c for all of it.`
+    : `No kind ${kind}. Run 'tolkien kinds'.`;
+}
+
 /** A token as a line: kind, start, end and text, with tabs between. */
-const line = (row: Row) =>
-  `${row.kind}\t${row.start}\t${row.end}\t${JSON.stringify(row.text)}`;
+const line = (token: Token) =>
+  `${token.kind}\t${token.start}\t${token.end}\t${JSON.stringify(token.text)}`;
+
+/** The tokens as lines for a person: the same fields, in columns. */
+export function columns(tokens: readonly Token[]): string[] {
+  const width = tokens.reduce(
+    (most, { kind }) => Math.max(most, kind.length),
+    0,
+  );
+  return tokens.map(
+    (token) =>
+      `${token.kind.padEnd(width)}  ${dim(`${token.start}..${token.end}`.padEnd(12))} ${JSON.stringify(token.text)}`,
+  );
+}
 
 /** Writes `lines` to stdout, waiting where the reader is slow. */
 async function print(lines: string[]): Promise<void> {
@@ -120,56 +134,42 @@ export async function lex(
   const lexer = new Lexer(added(options));
   const unknown = options.kinds.find((kind) => !lexer.kinds.includes(kind));
   if (unknown !== undefined) {
-    refuse(options, `No kind ${unknown}. Run 'tolkien kinds'.`);
+    refuse(options, unknownKind(unknown));
   }
   const wanted = options.kinds.length > 0 ? new Set(options.kinds) : undefined;
 
-  const tokens = lexer.tokens(text);
-  const rows: Row[] = [];
-  for (let index = 0; index < tokens.length; index++) {
-    const kind = tokens.kind(index);
+  const all = lexer.tokens(text);
+  const tokens: Token[] = [];
+  for (let index = 0; index < all.length; index++) {
+    const kind = all.kind(index);
     if (options.skipSpace && SPACE.has(kind)) continue;
     if (wanted && !wanted.has(kind)) continue;
-    rows.push(tokens.at(index) as Row);
+    tokens.push(all.at(index) as Token);
   }
 
   if (options.output) {
     const body = options.json
-      ? `${JSON.stringify(rows, null, 2)}\n`
-      : rows.map((row) => `${line(row)}\n`).join("");
+      ? `${JSON.stringify(tokens, null, 2)}\n`
+      : tokens.map((token) => `${line(token)}\n`).join("");
     writeFileSync(options.output, body);
     output(options, {
       json: () => ({
         success: true,
         source: label,
         output: options.output,
-        count: rows.length,
+        count: tokens.length,
       }),
       human: () => {
         success(`Lexed → ${options.output}`);
-        console.log(dim(`  ${rows.length} tokens`));
+        console.log(dim(`  ${tokens.length} tokens`));
       },
     });
-    return;
-  }
-
-  if (options.json) {
-    jsonOutput({
-      success: true,
-      source: label,
-      count: rows.length,
-      tokens: rows,
-    });
+  } else if (options.json) {
+    jsonOutput({ success: true, source: label, count: tokens.length, tokens });
   } else if (options.quiet || !process.stdout.isTTY) {
     // Into a pipe or a file the lines are the ones a program reads.
-    await print(rows.map(line));
+    await print(tokens.map(line));
   } else {
-    const width = Math.max(0, ...rows.map((row) => row.kind.length));
-    await print(
-      rows.map(
-        (row) =>
-          `${row.kind.padEnd(width)}  ${dim(`${row.start}..${row.end}`.padEnd(12))} ${JSON.stringify(row.text)}`,
-      ),
-    );
+    await print(columns(tokens));
   }
 }

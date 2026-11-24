@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { columns } from "./commands/lex.js";
 
-const main = new URL("./main.ts", import.meta.url).pathname;
+const main = fileURLToPath(new URL("./main.ts", import.meta.url));
 
 /** Runs the command with `args` in `cwd`, with `stdin` piped in. */
 function tolkien(args: string[], stdin = "", cwd = process.cwd()) {
@@ -51,6 +53,21 @@ describe("the tolkien command", () => {
     );
   });
 
+  test("lines the fields up for a person, however many tokens there are", () => {
+    const token = { kind: "WORD", start: 0, end: 1, text: "a" };
+    const date = {
+      kind: "DATE_ISO_8601",
+      start: 2,
+      end: 12,
+      text: "2026-11-23",
+    };
+    const [first, second] = columns([token, date]);
+    expect(first.indexOf('"a"')).toBe(second.indexOf('"2026-11-23"'));
+    expect(first).toStartWith("WORD           ");
+    expect(columns(Array(300_000).fill(token))).toHaveLength(300_000);
+    expect(columns([])).toEqual([]);
+  });
+
   test("gives JSON with --json", () => {
     const { out } = tolkien(
       ["-", "-g", "network", "-k", "IPV4", "--json"],
@@ -88,6 +105,11 @@ describe("the tolkien command", () => {
     for (const [args, reason] of [
       [["-t", "x", "-k", "NOPE"], "No kind NOPE"],
       [["-t", "x", "-g", "nope"], 'the catalog has no "nope"'],
+      [["-t", "x", "-c", "-g", "nope"], 'the catalog has no "nope"'],
+      [
+        ["-t", "x", "-k", "IPV4"],
+        "IPV4 is a kind of the catalog. Add -g network",
+      ],
       [["-t", "x", "file.txt"], "Give a source or --text, not both."],
     ] as const) {
       const { code, err } = tolkien([...args]);
