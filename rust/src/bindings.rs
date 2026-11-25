@@ -63,10 +63,14 @@ impl JsLexer {
 fn typed_array<T: Copy>(env: &Env, values: &[T], kind: TypedArrayType) -> Result<JsTypedArray> {
     let bytes = std::mem::size_of_val(values);
     let mut buffer = env.create_arraybuffer(bytes)?;
-    // SAFETY: `values` is `bytes` long, the buffer was made with that
-    // length, and the two do not overlap: the engine has just allocated it.
-    unsafe {
-        std::ptr::copy_nonoverlapping(values.as_ptr().cast::<u8>(), buffer.as_mut_ptr(), bytes);
+    // An empty buffer may have no address at all.
+    if bytes > 0 {
+        // SAFETY: `values` is `bytes` long, the buffer was made with that
+        // length, and the two do not overlap: the engine has just
+        // allocated it.
+        unsafe {
+            std::ptr::copy_nonoverlapping(values.as_ptr().cast::<u8>(), buffer.as_mut_ptr(), bytes);
+        }
     }
     buffer.into_raw().into_typedarray(kind, values.len(), 0)
 }
