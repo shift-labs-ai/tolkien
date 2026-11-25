@@ -781,3 +781,19 @@ fn long_runs_are_lexed_in_linear_time() {
         assert!(elapsed.as_secs() < 2, "a run of {unit:?} took {elapsed:?}");
     }
 }
+
+/// More tokens than one part of the gathering holds, with and without
+/// threads: the parts are put together in order and none is lost.
+#[test]
+fn many_tokens_are_gathered_in_order() {
+    let lexer = Lexer::default();
+    // Two tokens for every three bytes: denser than a lexer may guess.
+    let text = "a 1\n".repeat(60_000);
+    let expected: Vec<_> = lexer.tokens(&text).collect();
+    assert!(expected.len() > 100_000);
+    for threads in [0, 1, 2, 3, 7] {
+        assert_eq!(lexer.tokens_parallel_on(&text, threads), expected);
+    }
+    assert_eq!(lexer.tokens_parallel(&text), expected);
+    assert!(lexer.tokens_parallel_on("", 4).is_empty());
+}

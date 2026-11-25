@@ -327,19 +327,23 @@ impl Lexer {
         cuts.dedup();
         // Threads cannot be started on wasm32.
         if cuts.len() < 2 || cfg!(target_arch = "wasm32") {
-            return self.tokens(text).collect();
+            let mut tokens = Gathered::default();
+            for token in self.tokens(text) {
+                tokens.push(token);
+            }
+            return tokens.into_vec();
         }
 
         let lex_piece = |index: usize| -> Vec<Token<'t>> {
             let end = cuts.get(index + 1).copied().unwrap_or(text.len());
-            let mut tokens = Vec::with_capacity((end - cuts[index]) / 3);
+            let mut tokens = Gathered::default();
             for token in self.tokens_from(text, cuts[index]) {
                 tokens.push(token);
                 if token.end >= end {
                     break;
                 }
             }
-            tokens
+            tokens.into_vec()
         };
         let pieces: Vec<Vec<Token<'t>>> = std::thread::scope(|scope| {
             let threads: Vec<_> = (1..cuts.len())
@@ -355,17 +359,19 @@ impl Lexer {
                 .collect()
         });
 
-        let mut pieces = pieces.into_iter();
-        let mut tokens = pieces.next().unwrap_or_default();
-        tokens.reserve(text.len() / 3);
+        let mut tokens = Gathered::default();
         for piece in pieces {
             let mut pos = tokens.last().map_or(0, |token| token.end);
+            if pos == 0 {
+                tokens.extend(&piece);
+                continue;
+            }
             let piece_end = piece.last().map_or(0, |token| token.end);
             // Lex on from the last token until one of this piece starts
             // where the last one ends, or the piece is passed.
             while pos < piece_end {
                 if let Ok(index) = piece.binary_search_by_key(&pos, |token| token.start) {
-                    tokens.extend_from_slice(&piece[index..]);
+                    tokens.extend(&piece[index..]);
                     break;
                 }
                 let token = self
@@ -376,6 +382,56 @@ impl Lexer {
                 pos = token.end;
             }
         }
+        tokens.into_vec()
+    }
+}
+
+/// Tokens gathered when their number is not known beforehand, and given
+/// as one vector of exactly their number.
+///
+/// They are kept in parts of a fixed size and copied once at the end, so
+/// that no large block of memory is ever made larger. A vector that grows
+/// does that, and where a system's `realloc` keeps the old block of a
+/// large one (macOS 26 does), every long text would leave its tokens
+/// behind.
+#[derive(Default)]
+struct Gathered<'t> {
+    full: Vec<Vec<Token<'t>>>,
+    last: Vec<Token<'t>>,
+}
+
+impl<'t> Gathered<'t> {
+    /// How many tokens a part holds: about 800 KB.
+    const PART: usize = 1 << 14;
+
+    fn push(&mut self, token: Token<'t>) {
+        if self.last.len() == self.last.capacity() {
+            let full = std::mem::replace(&mut self.last, Vec::with_capacity(Self::PART));
+            if !full.is_empty() {
+                self.full.push(full);
+            }
+        }
+        self.last.push(token);
+    }
+
+    fn extend(&mut self, tokens: &[Token<'t>]) {
+        for &token in tokens {
+            self.push(token);
+        }
+    }
+
+    /// The token gathered last.
+    fn last(&self) -> Option<&Token<'t>> {
+        self.last.last()
+    }
+
+    fn into_vec(self) -> Vec<Token<'t>> {
+        let count = self.full.len() * Self::PART + self.last.len();
+        let mut tokens = Vec::with_capacity(count);
+        for part in &self.full {
+            tokens.extend_from_slice(part);
+        }
+        tokens.extend_from_slice(&self.last);
         tokens
     }
 }
