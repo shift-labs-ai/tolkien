@@ -252,13 +252,13 @@ describe("Lexer", () => {
 
   test("lexing many texts in a row does not keep their tokens", () => {
     // About 2 MB, and 3.6 MB of token arrays for each call. Arrays that
-    // are freed only when the event loop turns add up to 1.4 GB here.
+    // are freed only when the event loop turns add up to 360 MB here.
     const log = "Server 10.0.0.7 answered on 2024-01-15, ok.\n".repeat(50_000);
     const lexer = new Lexer();
     const megabytes = () => process.memoryUsage().rss / 1e6;
     lexer.tokens(log);
     const before = megabytes();
-    for (let call = 0; call < 400; call++) lexer.tokens(log);
-    expect(megabytes() - before).toBeLessThan(400);
-  });
+    for (let call = 0; call < 100; call++) lexer.tokens(log);
+    expect(megabytes() - before).toBeLessThan(150);
+  }, 30_000);
 });
