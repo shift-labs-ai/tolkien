@@ -796,4 +796,22 @@ fn many_tokens_are_gathered_in_order() {
     }
     assert_eq!(lexer.tokens_parallel(&text), expected);
     assert!(lexer.tokens_parallel_on("", 4).is_empty());
+
+    // One token fewer than a part holds, exactly as many, and one more,
+    // and the same around two parts.
+    for count in [16_383, 16_384, 16_385, 32_767, 32_768, 32_769] {
+        let text = "a ".repeat(count / 2) + if count % 2 == 1 { "a" } else { "" };
+        let expected: Vec<_> = lexer.tokens(&text).collect();
+        assert_eq!(expected.len(), count);
+        assert_eq!(
+            lexer.tokens_parallel_on(&text, 1),
+            expected,
+            "{count} tokens"
+        );
+        assert_eq!(
+            lexer.tokens_parallel_on(&text, 3),
+            expected,
+            "{count} tokens"
+        );
+    }
 }

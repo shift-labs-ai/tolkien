@@ -2,9 +2,9 @@
 
 A lexer for natural text: one pass turns a `&str` into typed tokens (words,
 numbers, dates, times, emails, URLs, amounts of money). A Rust rewrite of the
-Kotlin library `Michaelliv/fastlex`. The repository is private until its
-owner makes it public; nothing is published to npm or crates.io without
-being asked for.
+Kotlin library `Michaelliv/fastlex`. The repository is public and the
+packages are on npm; nothing is pushed or published without being asked
+for.
 
 ## Commands
 
@@ -168,6 +168,11 @@ bun run dev -- -t "some text"   # the command, from source
   public interface only and is the worked example; keep it compiling when
   that interface changes, and add to it what a new building block makes
   possible.
+- **A long list is gathered, never grown.** Tokens whose number is not
+  known are gathered in parts of a fixed size and copied once into a
+  vector of exactly their number (`Gathered` in `lexer.rs`). A vector
+  that grows asks the system to make a large block larger, and macOS 26
+  keeps the old block: 48 bytes a token left behind at every call.
 - **Fail fast, on what is cheap to test.** A matcher is asked far more
   often than it matches, so what it costs is what it costs to fail. Each
   layer refuses on a cheaper test than the next: `can_start` on one

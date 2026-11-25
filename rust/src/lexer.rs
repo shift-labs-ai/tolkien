@@ -279,6 +279,10 @@ impl Lexer {
     }
 
     /// The tokens of `text`, from start to end.
+    ///
+    /// To keep all the tokens of a long text, ask [`Lexer::tokens_parallel`]
+    /// for them: it gives one vector of exactly their number, where
+    /// `collect` grows a vector as they come.
     pub fn tokens<'l, 't>(&'l self, text: &'t str) -> Tokens<'l, 't> {
         self.tokens_from(text, 0)
     }
@@ -359,13 +363,11 @@ impl Lexer {
                 .collect()
         });
 
+        let mut pieces = pieces.into_iter();
         let mut tokens = Gathered::default();
+        tokens.extend(&pieces.next().unwrap_or_default());
         for piece in pieces {
             let mut pos = tokens.last().map_or(0, |token| token.end);
-            if pos == 0 {
-                tokens.extend(&piece);
-                continue;
-            }
             let piece_end = piece.last().map_or(0, |token| token.end);
             // Lex on from the last token until one of this piece starts
             // where the last one ends, or the piece is passed.
@@ -392,11 +394,12 @@ impl Lexer {
 /// They are kept in parts of a fixed size and copied once at the end, so
 /// that no large block of memory is ever made larger. A vector that grows
 /// does that, and where a system's `realloc` keeps the old block of a
-/// large one (macOS 26 does), every long text would leave its tokens
-/// behind.
+/// large one (macOS 26 does), every long text leaves its tokens behind.
 #[derive(Default)]
 struct Gathered<'t> {
+    /// The parts that are full, each of `PART` tokens.
     full: Vec<Vec<Token<'t>>>,
+    /// The part being filled. It is empty only while nothing is gathered.
     last: Vec<Token<'t>>,
 }
 
@@ -405,11 +408,11 @@ impl<'t> Gathered<'t> {
     const PART: usize = 1 << 14;
 
     fn push(&mut self, token: Token<'t>) {
-        if self.last.len() == self.last.capacity() {
+        if self.last.len() == Self::PART {
             let full = std::mem::replace(&mut self.last, Vec::with_capacity(Self::PART));
-            if !full.is_empty() {
-                self.full.push(full);
-            }
+            self.full.push(full);
+        } else if self.last.capacity() == 0 {
+            self.last.reserve_exact(Self::PART);
         }
         self.last.push(token);
     }
